@@ -76,8 +76,8 @@ static void huffman_update_paths(huffman_tree_type* t, int32_t i) {
     }
 }
 
-static int32_t huffman_swap_siblings_if_necessary(huffman_tree_type* t,
-                                                  const int32_t ix) {
+static inline int32_t huffman_swap_siblings(huffman_tree_type* t,
+                                            const int32_t ix) {
     const int32_t m = t->n * 2 - 1;
     assert(0 <= ix && ix < m);
     if (ix < m - 1) { // not root
@@ -95,16 +95,16 @@ static int32_t huffman_swap_siblings_if_necessary(huffman_tree_type* t,
     return ix;
 }
 
-static void huffman_frequency_changed(huffman_tree_type* t, int32_t i);
+static inline void huffman_frequency_changed(huffman_tree_type* t, int32_t ix);
 
-static void huffman_update_freq(huffman_tree_type* t, int32_t i) {
-    const int32_t lix = t->node[i].lix; assert(lix != -1);
-    const int32_t rix = t->node[i].rix; assert(rix != -1);
-    t->node[i].freq = t->node[lix].freq + t->node[rix].freq;
+static inline void huffman_update_freq(huffman_tree_type* t, int32_t ix) {
+    const int32_t lix = t->node[ix].lix; assert(lix != -1);
+    const int32_t rix = t->node[ix].rix; assert(rix != -1);
+    t->node[ix].freq = t->node[lix].freq + t->node[rix].freq;
 }
 
-static void huffman_move_up(huffman_tree_type* t, int32_t i) {
-    const int32_t pix = t->node[i].pix; // parent
+static inline void huffman_move_up(huffman_tree_type* t, int32_t ix) {
+    const int32_t pix = t->node[ix].pix; // parent
     assert(pix != -1);
     const int32_t gix = t->node[pix].pix; // grandparent
     assert(gix != -1);
@@ -113,23 +113,23 @@ static void huffman_move_up(huffman_tree_type* t, int32_t i) {
     const bool parent_is_left_child = pix == t->node[gix].lix;
     const int32_t psx = parent_is_left_child ? // parent sibling index
         t->node[gix].rix : t->node[gix].lix;   // aka auntie/uncle
-    if (t->node[i].freq > t->node[psx].freq) {
+    if (t->node[ix].freq > t->node[psx].freq) {
         // Move grandparents left or right subtree to be
         // parents right child instead of 'i'.
         t->stats.moves++;
-        t->node[i].pix = gix;
+        t->node[ix].pix = gix;
         if (parent_is_left_child) {
-            t->node[gix].rix = i;
+            t->node[gix].rix = ix;
         } else {
-            t->node[gix].lix = i;
+            t->node[gix].lix = ix;
         }
         t->node[pix].rix = psx;
         t->node[psx].pix = pix;
         huffman_update_freq(t, pix);
         huffman_update_freq(t, gix);
-        huffman_swap_siblings_if_necessary(t, i);
-        huffman_swap_siblings_if_necessary(t, psx);
-        huffman_swap_siblings_if_necessary(t, pix);
+        huffman_swap_siblings(t, ix);
+        huffman_swap_siblings(t, psx);
+        huffman_swap_siblings(t, pix);
         huffman_update_paths(t, gix);
         huffman_frequency_changed(t, gix);
     }
@@ -141,11 +141,11 @@ static void huffman_frequency_changed(huffman_tree_type* t, int32_t i) {
     if (pix == -1) { // `i` is root
         assert(i == m - 1);
         huffman_update_freq(t, i);
-        i = huffman_swap_siblings_if_necessary(t, i);
+        i = huffman_swap_siblings(t, i);
     } else {
         assert(0 <= pix && pix < m);
         huffman_update_freq(t, pix);
-        i = huffman_swap_siblings_if_necessary(t, i);
+        i = huffman_swap_siblings(t, i);
         huffman_frequency_changed(t, pix);
     }
     if (pix != -1 && t->node[pix].pix != -1 && i == t->node[pix].rix) {
@@ -154,8 +154,8 @@ static void huffman_frequency_changed(huffman_tree_type* t, int32_t i) {
     }
 }
 
-static void huffman_inc_frequency(huffman_tree_type* t, int32_t i) {
-    assert(0 <= i && i < t->n); // terminal
+static inline void huffman_inc_frequency(huffman_tree_type* t, int32_t ix) {
+    assert(0 <= ix && ix < t->n); // terminal
     // If input sequence frequencies are severely skewed (e.g. Lucas numbers
     // similar to Fibonacci numbers) and input sequence is long enough.
     // The depth of the tree will grow past 64 bits.
@@ -163,9 +163,9 @@ static void huffman_inc_frequency(huffman_tree_type* t, int32_t i) {
     // L(81) = 18,446,744,073,709,551,616 not actually realistic but
     // better be safe than sorry:
     if (!t->complete) {
-        if (t->depth < 63 && t->node[i].freq < UINT64_MAX - 1) {
-            t->node[i].freq++;
-            huffman_frequency_changed(t, i);
+        if (t->depth < 63 && t->node[ix].freq < UINT64_MAX - 1) {
+            t->node[ix].freq++;
+            huffman_frequency_changed(t, ix);
         } else {
             // ignore future frequency updates
             t->complete = 1;
