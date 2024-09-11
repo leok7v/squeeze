@@ -21,52 +21,16 @@
 #include "squeeze.h"
 #include "file.h"
 
-static errno_t squeeze_init_with(squeeze_type* s, void* memory, size_t size,
-                                 uint8_t win_bits, uint8_t map_bits,
-                                 uint8_t len_bits) {
-    errno_t r = 0;
-    assert(squeeze_min_win_bits <= win_bits && win_bits <= squeeze_max_win_bits);
-    assert(squeeze_min_map_bits <= map_bits && map_bits <= squeeze_max_map_bits);
-    assert(squeeze_min_len_bits <= len_bits && len_bits <= squeeze_max_len_bits);
-    size_t expected = squeeze_sizeof(win_bits, map_bits, len_bits);
-    // 167,936,192 bytes for (win_bits = 11, map_bits = 19)
-    assert(size == expected);
-    if (expected == 0 || memory == null || size != expected) {
-        r = EINVAL;
-    } else {
-        uint8_t* p = (uint8_t*)memory;
-        memset(memory, 0, sizeof(squeeze_type));
-        p += sizeof(squeeze_type);
-        const size_t map_n = ((size_t)1U) << map_bits;
-        const size_t dic_n = map_n;
-        const size_t sym_n = 256; // always 256
-        const size_t pos_n = ((size_t)1U) << win_bits;
-        const size_t len_n = ((size_t)1U) << len_bits;
-        const size_t dic_m = dic_n * 2 - 1;
-        const size_t sym_m = sym_n * 2 - 1;
-        const size_t pos_m = pos_n * 2 - 1;
-        const size_t len_m = len_n * 2 - 1;
-        s->map_entries = (map_entry_t*)p; p += sizeof(map_entry_t) * map_n;
-        s->dic_nodes = (huffman_node_type*)p; p += sizeof(huffman_node_type) * dic_m;
-        s->sym_nodes = (huffman_node_type*)p; p += sizeof(huffman_node_type) * sym_m;
-        s->pos_nodes = (huffman_node_type*)p; p += sizeof(huffman_node_type) * pos_m;
-        s->len_nodes = (huffman_node_type*)p; p += sizeof(huffman_node_type) * len_m;
-        assert(p == (uint8_t*)memory + size);
-        map.init(&s->map,     s->map_entries, map_n);
-        huffman.init(&s->sym, s->sym_nodes, sym_m);
-        huffman.init(&s->dic, s->dic_nodes, dic_m);
-        huffman.init(&s->pos, s->pos_nodes, pos_m);
-        huffman.init(&s->len, s->len_nodes, len_m);
-    }
-    return r;
-}
+// enum { bits_win = 12, bits_map = 19, bits_len = 4 };
+
+enum { bits_win = 12, bits_map = 20, bits_len = 8 };
 
 static squeeze_type* squeeze_new(bitstream_type* bs, uint8_t win_bits,
                                  uint8_t map_bits, uint8_t len_bits) {
     const uint64_t bytes = squeeze_sizeof(win_bits, map_bits, len_bits);
     squeeze_type* s = (squeeze_type*)calloc(1, (size_t)bytes);
     if (s != null) {
-        squeeze_init_with(s, s, bytes, win_bits, map_bits, len_bits);
+        squeeze.init_with(s, s, bytes, win_bits, map_bits, len_bits);
         s->bs = bs;
     }
     return s;
@@ -78,7 +42,6 @@ static void squeeze_delete(squeeze_type* s) {
 
 static errno_t compress(const char* from, const char* to,
                         const uint8_t* data, uint64_t bytes) {
-    enum { bits_win = 12, bits_map = 19, bits_len = 4 };
     FILE* out = null; // compressed file
     errno_t r = fopen_s(&out, to, "wb") != 0;
     if (r != 0 || out == null) {
@@ -312,5 +275,14 @@ WITH HUFFMAN + DICTIONARY:
  926536 ->  514016  55.5% of "x64.elf"
  786570 ->  910648 115.8% of "mandrill.bmp"
  627896 ->  747184 119.0% of "mandrill.png"
+
+// bible.txt.zip size (zip: 1,398,871 bytes)
+// enum { bits_win = 12, bits_map = 19, bits_len = 4 }; // 1801336
+// enum { bits_win = 12, bits_map = 14, bits_len = 5 }; // 1736248
+// enum { bits_win = 13, bits_map = 15, bits_len = 6 }; // 1683192
+// enum { bits_win = 14, bits_map = 16, bits_len = 7 }; // 1623176
+// enum { bits_win = 15, bits_map = 17, bits_len = 8 }; // 1559648
+// enum { bits_win = 16, bits_map = 18, bits_len = 8 }; // 1496552
+
 
 #endif

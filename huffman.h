@@ -34,6 +34,7 @@ typedef struct {
     void (*init)(huffman_tree_type* t, huffman_node_type nodes[],
                  const size_t m);
     void (*inc_frequency)(huffman_tree_type* t, int32_t symbol);
+    double (*entropy)(const huffman_tree_type* t); // Shannon entropy (bps)
     uint8_t (*log2_of_pow2)(uint64_t pow2);
 } huffman_interface;
 
@@ -108,7 +109,7 @@ static inline void huffman_move_up(huffman_tree_type* t, int32_t ix) {
     assert(pix != -1);
     const int32_t gix = t->node[pix].pix; // grandparent
     assert(gix != -1);
-    assert(t->node[pix].rix == i);
+    assert(t->node[pix].rix == ix);
     // Is parent grandparent`s left or right child?
     const bool parent_is_left_child = pix == t->node[gix].lix;
     const int32_t psx = parent_is_left_child ? // parent sibling index
@@ -184,6 +185,19 @@ static uint8_t huffman_log2_of_pow2(uint64_t pow2) {
     }
 }
 
+static double huffman_entropy(const huffman_tree_type* t) { // Shannon entropy
+    double total = 0;
+    double aha_entropy = 0.0;
+    for (int32_t i = 0; i < t->n; i++) { total += (double)t->node[i].freq; }
+    for (int32_t i = 0; i < t->n; i++) {
+        if (t->node[i].freq > 0) {
+            double p_i = (double)t->node[i].freq / total;
+            aha_entropy += p_i * log2(p_i);
+        }
+    }
+    return -aha_entropy;
+}
+
 static void huffman_init(huffman_tree_type* t, huffman_node_type nodes[],
                          const size_t count) {
     assert(7 <= count && count < INT32_MAX); // must pow(2, bits_per_symbol) * 2 - 1
@@ -235,7 +249,8 @@ static void huffman_init(huffman_tree_type* t, huffman_node_type nodes[],
 huffman_interface huffman = {
     .init          = huffman_init,
     .inc_frequency = huffman_inc_frequency,
-    .log2_of_pow2  = huffman_log2_of_pow2
+    .log2_of_pow2  = huffman_log2_of_pow2,
+    .entropy       = huffman_entropy
 };
 
 #endif
