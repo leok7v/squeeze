@@ -23,7 +23,9 @@
 
 // enum { bits_win = 12, bits_map = 19, bits_len = 4 };
 
-enum { bits_win = 12, bits_map = 20, bits_len = 8 };
+//enum { bits_win = 12, bits_map = 16, bits_len = 8 };
+
+enum { bits_win = 15, bits_map = 19, bits_len = 8 };
 
 static squeeze_type* squeeze_new(bitstream_type* bs, uint8_t win_bits,
                                  uint8_t map_bits, uint8_t len_bits) {
@@ -57,7 +59,7 @@ static errno_t compress(const char* from, const char* to,
     } else {
         s = squeeze_new(&bs, bits_win, bits_map, bits_len);
         if (s != null) {
-            squeeze.compress(s, data, bytes);
+            squeeze.compress(s, data, bytes, 1u << bits_win);
             assert(s->error == 0);
         } else {
             r = ENOMEM;
@@ -186,11 +188,6 @@ int main(int argc, const char* argv[]) {
     (void)argc; (void)argv; // unused
     errno_t r = locate_test_folder();
     if (r == 0) {
-        const char* data = "Hello World Hello.World Hello World";
-        size_t bytes = strlen((const char*)data);
-        r = test(null, (const uint8_t*)data, bytes);
-    }
-    if (r == 0) {
         uint8_t data[4 * 1024] = {0};
         r = test(null, data, sizeof(data));
         // lz77 deals with run length encoding in amazing overlapped way
@@ -198,6 +195,11 @@ int main(int argc, const char* argv[]) {
             memcpy(data + i, "\x01\x02\x03\x04", 4);
         }
         r = test(null, data, sizeof(data));
+    }
+    if (r == 0) {
+        const char* data = "Hello World Hello.World Hello World";
+        size_t bytes = strlen((const char*)data);
+        r = test(null, (const uint8_t*)data, bytes);
     }
     if (r == 0 && file.exist(__FILE__)) { // test.c source code:
         r = test_compression(__FILE__);

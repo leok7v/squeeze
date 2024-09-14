@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <errno.h>
 
-// Adaptive Huffman Coding
+// Adaptive Huffman Coding  
 // https://en.wikipedia.org/wiki/Adaptive_Huffman_coding
 
 typedef struct huffman_node_struct {
@@ -19,9 +19,9 @@ typedef struct huffman_node_struct {
 typedef struct huffman_tree_struct {
     huffman_node_type* node;
     int32_t n;
+    int32_t next;  // next non-terminal nodes in the tree >= n
     int32_t depth; // max tree depth seen
     int32_t complete; // tree is too deep or freq too high - no more updates
-    int32_t padding;
     // stats:
     struct {
         size_t updates;
@@ -33,9 +33,9 @@ typedef struct huffman_tree_struct {
 typedef struct {
     void (*init)(huffman_tree_type* t, huffman_node_type nodes[],
                  const size_t m);
+    void (*insert)(huffman_tree_type* t, int32_t i);
     void (*inc_frequency)(huffman_tree_type* t, int32_t symbol);
     double (*entropy)(const huffman_tree_type* t); // Shannon entropy (bps)
-    uint8_t (*log2_of_pow2)(uint64_t pow2);
 } huffman_interface;
 
 extern huffman_interface huffman;
@@ -65,43 +65,49 @@ static void huffman_update_paths(huffman_tree_type* t, int32_t i) {
     const int32_t lix = t->node[i].lix;
     const int32_t rix = t->node[i].rix;
     if (lix != -1) {
-        assert(rix != -1);
         t->node[lix].bits = bits + 1;
         t->node[lix].path = path;
+        huffman_update_paths(t, lix);
+    }
+    if (rix != -1) {
         t->node[rix].bits = bits + 1;
         t->node[rix].path = path | (1ULL << bits);
-        huffman_update_paths(t, lix);
         huffman_update_paths(t, rix);
-    } else {
-        if (bits > t->depth) { t->depth = bits; }
     }
+    if (bits > t->depth) { t->depth = bits; }
 }
 
 static inline int32_t huffman_swap_siblings(huffman_tree_type* t,
-                                            const int32_t ix) {
+                                            const int32_t i) {
     const int32_t m = t->n * 2 - 1;
-    assert(0 <= ix && ix < m);
-    if (ix < m - 1) { // not root
-        const int32_t pix = t->node[ix].pix; // parent (cannot be a leaf)
-        const int32_t lix = t->node[pix].lix; assert(0 <= lix && lix < m - 1);
-        const int32_t rix = t->node[pix].rix; assert(0 <= rix && rix < m - 1);
-        if (t->node[lix].freq > t->node[rix].freq) { // swap
-            t->stats.swaps++;
-            t->node[pix].lix = rix;
-            t->node[pix].rix = lix;
-            huffman_update_paths(t, pix); // because swap changed all path below
-            return ix == lix ? rix : lix;
+    assert(0 <= i && i < m);
+    if (i < m - 1) { // not root
+        const int32_t pix = t->node[i].pix;
+        assert(pix >= t->n); // parent (cannot be a leaf)
+        const int32_t lix = t->node[pix].lix;
+        const int32_t rix = t->node[pix].rix;
+        if (lix >= 0 && rix >= 0) {
+            assert(0 <= lix && lix < m - 1 && 0 <= rix && rix < m - 1);
+            if (t->node[lix].freq > t->node[rix].freq) { // swap
+                t->stats.swaps++;
+                t->node[pix].lix = rix;
+                t->node[pix].rix = lix;
+                huffman_update_paths(t, pix); // because swap changed all path below
+                return i == lix ? rix : lix;
+            }
         }
     }
-    return ix;
+    return i;
 }
 
 static inline void huffman_frequency_changed(huffman_tree_type* t, int32_t ix);
 
-static inline void huffman_update_freq(huffman_tree_type* t, int32_t ix) {
-    const int32_t lix = t->node[ix].lix; assert(lix != -1);
-    const int32_t rix = t->node[ix].rix; assert(rix != -1);
-    t->node[ix].freq = t->node[lix].freq + t->node[rix].freq;
+static inline void huffman_update_freq(huffman_tree_type* t, int32_t i) {
+    const int32_t lix = t->node[i].lix;
+    const int32_t rix = t->node[i].rix;
+    assert(lix != -1 || rix != -1); // at least one leaf present
+    t->node[i].freq = (lix >= 0 ? t->node[lix].freq : 0) +
+                      (rix >= 0 ? t->node[rix].freq : 0);
 }
 
 static inline void huffman_move_up(huffman_tree_type* t, int32_t ix) {
@@ -155,33 +161,88 @@ static void huffman_frequency_changed(huffman_tree_type* t, int32_t i) {
     }
 }
 
-static inline void huffman_inc_frequency(huffman_tree_type* t, int32_t ix) {
-    assert(0 <= ix && ix < t->n); // terminal
+static void huffman_insert(huffman_tree_type* t, int32_t i) {
+    const int32_t root = t->n * 2 - 1 - 1;
+    int32_t ipx = root;
+    assert(t->node[i].pix == -1 && t->node[i].lix == -1 && t->node[i].rix == -1);
+    assert(t->node[i].freq == 0 && t->node[i].bits == 0 && t->node[i].path == 0);
+    t->node[i].freq = 1;
+    while (ipx >= t->n) {
+        if (t->node[ipx].rix == -1) {
+            t->node[ipx].rix = i;
+            t->node[i].pix = ipx;
+            break;
+        } else if (t->node[ipx].lix == -1) {
+            t->node[ipx].lix = i;
+            t->node[i].pix = ipx;
+            break;
+        } else {
+            assert(t->node[ipx].lix >= 0);
+            assert(t->node[i].freq <= t->node[t->node[ipx].lix].freq);
+            ipx = t->node[ipx].lix;
+        }
+    }
+    if (ipx >= t->n) { // not a leaf, inserted
+        t->node[ipx].freq++;
+        i = huffman_swap_siblings(t, i);
+        assert(t->node[ipx].lix == i || t->node[ipx].rix);
+        assert(t->node[ipx].freq ==
+                (t->node[ipx].rix >= 0 ? t->node[t->node[ipx].rix].freq : 0) +
+                (t->node[ipx].lix >= 0 ? t->node[t->node[ipx].lix].freq : 0));
+    } else { // leaf
+        assert(t->next > t->n);
+        if (t->next == t->n) {
+            t->complete = true;
+        } else {
+            t->next--;
+            int32_t nix = t->next;
+            t->node[nix] = (huffman_node_type){
+                .freq = t->node[ipx].freq,
+                .lix = ipx,
+                .rix = -1,
+                .pix = t->node[ipx].pix,
+                .bits = t->node[ipx].bits,
+                .path = t->node[ipx].path
+            };
+            if (t->node[ipx].pix != -1) {
+                if (t->node[t->node[ipx].pix].lix == ipx) {
+                    t->node[t->node[ipx].pix].lix = nix;
+                } else {
+                    t->node[t->node[ipx].pix].rix = nix;
+                }
+            }
+            t->node[ipx].pix = nix;
+            t->node[ipx].bits++;
+            t->node[ipx].path = t->node[nix].path;
+            t->node[nix].rix = i;
+            t->node[i].pix = nix;
+            t->node[i].bits = t->node[nix].bits + 1;
+            t->node[i].path = t->node[nix].path | (1ULL << t->node[nix].bits);
+            huffman_update_freq(t, nix);
+            ipx = nix;
+        }
+    }
+    huffman_frequency_changed(t, i);
+    huffman_update_paths(t, ipx);
+    assert(t->node[i].freq != 0 && t->node[i].bits != 0);
+}
+
+static inline void huffman_inc_frequency(huffman_tree_type* t, int32_t i) {
+    assert(0 <= i && i < t->n); // terminal
     // If input sequence frequencies are severely skewed (e.g. Lucas numbers
     // similar to Fibonacci numbers) and input sequence is long enough.
     // The depth of the tree will grow past 64 bits.
     // The first Lucas number that exceeds 2^64 is
     // L(81) = 18,446,744,073,709,551,616 not actually realistic but
     // better be safe than sorry:
-    if (!t->complete) {
-        if (t->depth < 63 && t->node[ix].freq < UINT64_MAX - 1) {
-            t->node[ix].freq++;
-            huffman_frequency_changed(t, ix);
-        } else {
-            // ignore future frequency updates
-            t->complete = 1;
-        }
-    }
-}
-
-static uint8_t huffman_log2_of_pow2(uint64_t pow2) {
-    assert(pow2 > 0 && (pow2 & (pow2 - 1)) == 0);
-    if (pow2 > 0 && (pow2 & (pow2 - 1)) == 0) {
-        uint8_t bit = 0;
-        while (pow2 >>= 1) { bit++; }
-        return bit;
+    if (t->node[i].pix == -1) {
+        huffman_insert(t, i); // Unseen terminal node.
+    } else if (!t->complete && t->depth < 63 && t->node[i].freq < UINT64_MAX - 1) {
+        t->node[i].freq++;
+        huffman_frequency_changed(t, i);
     } else {
-        return 0xFF; // error
+        // ignore future frequency updates
+        t->complete = 1;
     }
 }
 
@@ -201,55 +262,26 @@ static double huffman_entropy(const huffman_tree_type* t) { // Shannon entropy
 static void huffman_init(huffman_tree_type* t, huffman_node_type nodes[],
                          const size_t count) {
     assert(7 <= count && count < INT32_MAX); // must pow(2, bits_per_symbol) * 2 - 1
-    const int32_t m = (int32_t)count;
-    const int32_t n = (int32_t)(m + 1) / 2;
+    const int32_t n = (int32_t)(count + 1) / 2;
     assert(n > 4 && (n & (n - 1)) == 0); // must be power of 2
-    const int32_t bits_per_symbol = huffman_log2_of_pow2(n);
-    assert(2 <= bits_per_symbol && bits_per_symbol <= 20);
     memset(&t->stats, 0x00, sizeof(t->stats));
     t->node = nodes;
     t->n = n;
-    t->depth = bits_per_symbol;
+    const int32_t root = n * 2 - 1;
+    t->next = root - 1; // next non-terminal node
+    t->depth = 0;
     t->complete = 0;
-    for (int32_t i = 0; i < n; i++) {
+    for (size_t i = 0; i < count; i++) {
         t->node[i] = (huffman_node_type){
-            .freq = 1, .lix = -1, .rix = -1, .pix = n + i / 2,
-            .bits = bits_per_symbol
+            .freq = 0, .pix = -1, .lix = -1, .rix = -1, .bits = 0, .path = 0
         };
     }
-    int32_t ix = n;
-    int32_t lix = 0;
-    int32_t rix = 1;
-    int32_t n2  = n / 2;
-    int32_t bits = bits_per_symbol - 1;
-    while (n2 > 0) {
-        int32_t pix = ix + n2;
-        for (int32_t i = 0; i < n2; i++) {
-            uint64_t f = t->node[lix].freq + t->node[rix].freq;
-            assert(ix < m);
-            t->node[ix] = (huffman_node_type){
-                .freq = f, .lix = lix, .rix = rix, .pix = pix, .bits = bits };
-            lix += 2;
-            rix += 2;
-            if (i % 2 == 1) { pix++; }
-            ix++;
-        }
-        n2 = n2 / 2;
-        bits--;
-    }
-    // change root parent to be -1
-    const int32_t root = m - 1;
-    assert(t->node[root].bits == 0);
-    assert(t->node[root].pix == m);
-    t->node[root].pix = -1;
-    t->node[root].path = 0;
-    huffman_update_paths(t, m - 1);
 }
 
 huffman_interface huffman = {
     .init          = huffman_init,
+    .insert        = huffman_insert,
     .inc_frequency = huffman_inc_frequency,
-    .log2_of_pow2  = huffman_log2_of_pow2,
     .entropy       = huffman_entropy
 };
 

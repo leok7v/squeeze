@@ -7,10 +7,10 @@
 // Only supports d from 2 to 255 b because
 // 255 to ~2 b compression is about 1% of source and is good enough.
 
-typedef uint8_t map_entry_t[256]; // d[0] number of b [2..127]
+typedef uint8_t map_entry_type[256]; // d[0] number of b [2..127]
 
 typedef struct {
-    map_entry_t* entry;
+    map_entry_type* entry;
     int32_t n; // entry[n]
     int32_t entries;
     int32_t max_chain;
@@ -18,7 +18,7 @@ typedef struct {
 } map_type;
 
 typedef struct {
-    void        (*init)(map_type* m, map_entry_t entry[], size_t n);
+    void        (*init)(map_type* m, map_entry_type entry[], size_t n);
     const void* (*data)(const map_type* m, int32_t i);
     uint8_t     (*bytes)(const map_type* m, int32_t i);
     int32_t     (*get)(const map_type* m, const void* data, uint8_t bytes);
@@ -72,7 +72,7 @@ static inline uint64_t map_hash64(const uint8_t* data, size_t bytes) {
     return hash;
 }
 
-static void map_init(map_type* m, map_entry_t entry[], size_t n) {
+static void map_init(map_type* m, map_entry_type entry[], size_t n) {
     assert(16 < n && n < 1024 * 1024);
     m->n = (int32_t)n;
     m->entry = entry;
@@ -97,7 +97,7 @@ static int32_t map_get_hashed(const map_type* m, uint64_t hash,
                               const void* d, uint8_t b) {
     enum { max_bytes = sizeof(m->entry[0]) - 1 };
     assert(2 <= b && b <= max_bytes);
-    const map_entry_t* entries = m->entry;
+    const map_entry_type* entries = m->entry;
     size_t i = (size_t)hash % m->n;
     // Because map is filled to 3/4 only there will always be
     // an empty slot at the end of the chain.
@@ -118,7 +118,7 @@ static int32_t map_put(map_type* m, const uint8_t* d, uint8_t b) {
     enum { max_bytes = sizeof(m->entry[0]) - 1 };
     assert(2 <= b && b <= max_bytes);
     if (m->entries < m->n * 3 / 4) {
-        map_entry_t* entries = m->entry;
+        map_entry_type* entries = m->entry;
         uint64_t hash = map_hash64(d, b);
         size_t i = (size_t)hash % m->n;
         int32_t chain = 0; // max chain length
