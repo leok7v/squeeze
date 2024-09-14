@@ -8,7 +8,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="../rt.h" />
-    <ClInclude Include="..\map.h" />
     <ClInclude Include="..\bitstream.h" />
     <ClInclude Include="..\huffman.h" />
     <ClInclude Include="..\rt_generics.h" />

@@ -8,7 +8,7 @@ https://en.wikipedia.org/wiki/LZ77_and_LZ78
 
 https://en.wikipedia.org/wiki/Huffman_coding
 
-https://en.wikipedia.org/wiki/LHA_(file_format)
+https://en.wikipedia.org/wiki/Deflate
 
 ### Goals:
 
@@ -28,8 +28,4 @@ the Guttenberg License wording is stripped from the text files.
 
 * See downloads.bat
 
-### Further development (if productizing ever needed):
-
-* Remove map and huffman interfaces to allow compiler to do deep inline.
-* Amalgamate all source into single header file.
 

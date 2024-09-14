@@ -30,15 +30,10 @@ typedef struct huffman_tree_struct {
     } stats;
 } huffman_tree_type;
 
-typedef struct {
-    void (*init)(huffman_tree_type* t, huffman_node_type nodes[],
-                 const size_t m);
-    void (*insert)(huffman_tree_type* t, int32_t i);
-    void (*inc_frequency)(huffman_tree_type* t, int32_t symbol);
-    double (*entropy)(const huffman_tree_type* t); // Shannon entropy (bps)
-} huffman_interface;
-
-extern huffman_interface huffman;
+static inline void   huffman_init(huffman_tree_type* t, huffman_node_type nodes[], const size_t m);
+static inline void   huffman_insert(huffman_tree_type* t, int32_t i);
+static inline void   huffman_inc_frequency(huffman_tree_type* t, int32_t symbol);
+static inline double huffman_entropy(const huffman_tree_type* t); // Shannon entropy (bps)
 
 #endif // huffman_header_included
 
@@ -142,7 +137,7 @@ static inline void huffman_move_up(huffman_tree_type* t, int32_t ix) {
     }
 }
 
-static void huffman_frequency_changed(huffman_tree_type* t, int32_t i) {
+static inline void huffman_frequency_changed(huffman_tree_type* t, int32_t i) {
     const int32_t m = t->n * 2 - 1; (void)m;
     const int32_t pix = t->node[i].pix;
     if (pix == -1) { // `i` is root
@@ -246,7 +241,8 @@ static inline void huffman_inc_frequency(huffman_tree_type* t, int32_t i) {
     }
 }
 
-static double huffman_entropy(const huffman_tree_type* t) { // Shannon entropy
+static inline double huffman_entropy(const huffman_tree_type* t) { 
+    // Shannon entropy
     double total = 0;
     double aha_entropy = 0.0;
     for (int32_t i = 0; i < t->n; i++) { total += (double)t->node[i].freq; }
@@ -259,8 +255,9 @@ static double huffman_entropy(const huffman_tree_type* t) { // Shannon entropy
     return -aha_entropy;
 }
 
-static void huffman_init(huffman_tree_type* t, huffman_node_type nodes[],
-                         const size_t count) {
+static inline void huffman_init(huffman_tree_type* t, 
+                                huffman_node_type nodes[],
+                                const size_t count) {
     assert(7 <= count && count < INT32_MAX); // must pow(2, bits_per_symbol) * 2 - 1
     const int32_t n = (int32_t)(count + 1) / 2;
     assert(n > 4 && (n & (n - 1)) == 0); // must be power of 2
@@ -277,12 +274,5 @@ static void huffman_init(huffman_tree_type* t, huffman_node_type nodes[],
         };
     }
 }
-
-huffman_interface huffman = {
-    .init          = huffman_init,
-    .insert        = huffman_insert,
-    .inc_frequency = huffman_inc_frequency,
-    .entropy       = huffman_entropy
-};
 
 #endif

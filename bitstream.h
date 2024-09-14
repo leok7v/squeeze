@@ -17,25 +17,20 @@ typedef struct bitstream_struct {
     errno_t  error; // sticky error
 } bitstream_type;
 
-typedef struct {
-    void     (*create)(bitstream_type* bs, void* data, size_t capacity);
-    void     (*write_bit)(bitstream_type* bs, int32_t bit);
-    void     (*write_bits)(bitstream_type* bs, uint64_t data, int32_t bits);
-    bool     (*read_bit)(bitstream_type* bs);
-    uint64_t (*read_bits)(bitstream_type* bs, int32_t bits);
-    void     (*flush)(bitstream_type* bs); // write trailing zeros
-    void     (*dispose)(bitstream_type* bs);
-} bitstream_interface;
-
-extern bitstream_interface bitstream;
-
+static inline void     bitstream_create(bitstream_type* bs, void* data, size_t capacity);
+static inline void     bitstream_write_bit(bitstream_type* bs, int32_t bit);
+static inline void     bitstream_write_bits(bitstream_type* bs, uint64_t data, int32_t bits);
+static inline bool     bitstream_read_bit(bitstream_type* bs);
+static inline uint64_t bitstream_read_bits(bitstream_type* bs, int32_t bits);
+static inline void     bitstream_flush(bitstream_type* bs); // write trailing zeros
+static inline void     bitstream_dispose(bitstream_type* bs);
 #endif // bitstream_header_included
 
 #if defined(bitstream_implementation) && !defined(bitstream_implemented)
 
 #define bitstream_implemented
 
-static void bitstream_write_bit(bitstream_type* bs, int32_t bit) {
+static inline void bitstream_write_bit(bitstream_type* bs, int32_t bit) {
     if (bs->error == 0) {
         bs->b64 <<= 1;
         bs->b64 |= (bit & 1);
@@ -63,8 +58,8 @@ static void bitstream_write_bit(bitstream_type* bs, int32_t bit) {
     }
 }
 
-static void bitstream_write_bits(bitstream_type* bs, uint64_t data,
-                                 int32_t bits) {
+static inline void bitstream_write_bits(bitstream_type* bs, 
+                                        uint64_t data, int32_t bits) {
     assert(0 < bits && bits <= 64);
     while (bits > 0 && bs->error == 0) {
         bitstream_write_bit(bs, data & 1);
@@ -73,7 +68,7 @@ static void bitstream_write_bits(bitstream_type* bs, uint64_t data,
     }
 }
 
-static bool bitstream_read_bit(bitstream_type* bs) {
+static inline bool bitstream_read_bit(bitstream_type* bs) {
     bool bit = false;
     if (bs->error == 0) {
         if (bs->bits == 0) {
@@ -104,7 +99,7 @@ static bool bitstream_read_bit(bitstream_type* bs) {
     return bit;
 }
 
-static uint64_t bitstream_read_bits(bitstream_type* bs, int32_t bits) {
+static inline uint64_t bitstream_read_bits(bitstream_type* bs, int32_t bits) {
     uint64_t data = 0;
     assert(0 < bits && bits <= 64);
     for (int32_t b = 0; b < bits && bs->error == 0; b++) {
@@ -114,29 +109,19 @@ static uint64_t bitstream_read_bits(bitstream_type* bs, int32_t bits) {
     return data;
 }
 
-static void bitstream_create(bitstream_type* bs, void* data, size_t capacity) {
+static inline void bitstream_create(bitstream_type* bs, void* data, size_t capacity) {
     assert(bs->data != null);
     memset(bs, 0x00, sizeof(*bs));
     bs->data = (uint8_t*)data;
     bs->capacity  = capacity;
 }
 
-static void bitstream_flush(bitstream_type* bs) {
+static inline void bitstream_flush(bitstream_type* bs) {
     while (bs->bits > 0 && bs->error == 0) { bitstream_write_bit(bs, 0); }
 }
 
-static void bitstream_dispose(bitstream_type* bs) {
+static inline void bitstream_dispose(bitstream_type* bs) {
     memset(bs, 0x00, sizeof(*bs));
 }
-
-bitstream_interface bitstream = {
-    .create     = bitstream_create,
-    .write_bit  = bitstream_write_bit,
-    .write_bits = bitstream_write_bits,
-    .read_bit   = bitstream_read_bit,
-    .read_bits  = bitstream_read_bits,
-    .flush      = bitstream_flush,
-    .dispose    = bitstream_dispose
-};
 
 #endif // bitstream_implementation

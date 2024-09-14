@@ -1,38 +1,27 @@
 #include "rt.h"
 
 #undef assert
-#undef swear
 #undef countof
-#undef min
-#undef max
-#undef swap
 
 #define assert(b, ...) rt_assert(b, __VA_ARGS__)
-#define swear(b, ...)  rt_swear(b, __VA_ARGS__) // release build assert
 #define printf(...)    rt_printf(__VA_ARGS__)
-#define println(...)   rt_println(__VA_ARGS__)  // same as printf("...\n", ...)
 #define countof(a)     rt_countof(a)
-#define min(x, y)      rt_min(x, y)
-#define max(x, y)      rt_max(x, y)
-#define swap(a, b)     rt_swap(a, b)
 
 #include "bitstream.h"
-#include "map.h"
 #include "squeeze.h"
 #include "file.h"
 
-// enum { bits_win = 12, bits_map = 19, bits_len = 4 };
+#ifndef SQUEEZE_MAX
+enum { bits_win = 11 };
+#else
+enum { bits_win = 15 };
+#endif
 
-//enum { bits_win = 12, bits_map = 16, bits_len = 8 };
-
-enum { bits_win = 15, bits_map = 19, bits_len = 8 };
-
-static squeeze_type* squeeze_new(bitstream_type* bs, uint8_t win_bits,
-                                 uint8_t map_bits, uint8_t len_bits) {
-    const uint64_t bytes = squeeze_sizeof(win_bits, map_bits, len_bits);
+static squeeze_type* squeeze_new(bitstream_type* bs, uint8_t win_bits) {
+    const uint64_t bytes = squeeze_sizeof(win_bits);
     squeeze_type* s = (squeeze_type*)calloc(1, (size_t)bytes);
     if (s != null) {
-        squeeze.init_with(s, s, bytes, win_bits, map_bits, len_bits);
+        squeeze.init_with(s, s, bytes, win_bits);
         s->bs = bs;
     }
     return s;
@@ -52,12 +41,12 @@ static errno_t compress(const char* from, const char* to,
     }
     squeeze_type* s = null;
     bitstream_type bs = { .file = out };
-    squeeze.write_header(&bs, bytes, bits_win, bits_map, bits_len);
+    squeeze.write_header(&bs, bytes, bits_win);
     if (bs.error != 0) {
         r = bs.error;
         printf("Failed to create \"%s\": %s\n", to, strerror(r));
     } else {
-        s = squeeze_new(&bs, bits_win, bits_map, bits_len);
+        s = squeeze_new(&bs, bits_win);
         if (s != null) {
             squeeze.compress(s, data, bytes, 1u << bits_win);
             assert(s->error == 0);
@@ -106,17 +95,15 @@ static errno_t verify(const char* fn, const uint8_t* input, size_t size) {
     bitstream_type bs = { .file = in };
     uint64_t bytes = 0;
     uint8_t win_bits = 0;
-    uint8_t map_bits = 0;
-    uint8_t len_bits = 0;
     if (r == 0) {
-        squeeze.read_header(&bs, &bytes, &win_bits, &map_bits, &len_bits);
+        squeeze.read_header(&bs, &bytes, &win_bits);
         if (bs.error != 0) {
             printf("Failed to read header from \"%s\"\n", fn);
             r = bs.error;
         }
     }
     if (r == 0) {
-        squeeze_type* s = squeeze_new(&bs, win_bits, map_bits, len_bits);
+        squeeze_type* s = squeeze_new(&bs, win_bits);
         if (s == null) {
             r = ENOMEM;
             printf("squeeze_new() failed.\n");
@@ -226,15 +213,6 @@ int main(int argc, const char* argv[]) {
     }
     return r;
 }
-
-#define map_implementation
-#include "map.h"
-
-#define bitstream_implementation
-#include "bitstream.h"
-
-#define huffman_implementation
-#include "huffman.h"
 
 #define file_implementation
 #include "file.h"
