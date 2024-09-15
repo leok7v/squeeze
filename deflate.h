@@ -4,8 +4,7 @@
 #include <stdint.h>
 
 enum {
-    deflate_max_len   =   258,
-    deflate_len_count =   285 + 1,
+    deflate_len_count = 285 + 1,
     deflate_pos_count = 32768 + 1
 };
 

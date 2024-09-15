@@ -13,7 +13,7 @@ enum {
 
 typedef struct {
     errno_t error; // sticky
-    huffman_tree_type  lit; // 0..255 litteral bytes; 257-285 length
+    huffman_tree_type  lit; // 0..255 literal bytes; 257-285 length
     huffman_tree_type  pos; // positions tree of 1^win_bits
     huffman_node_type* lit_nodes; // 512 * 2 - 1
     huffman_node_type* pos_nodes; //  32 * 2 - 1 
@@ -202,7 +202,7 @@ static inline void squeeze_encode_literal(squeeze_type* s, const uint16_t lit) {
 }
 
 static inline void squeeze_encode_len(squeeze_type* s, const uint16_t len) {
-    assert(3 <= len && len <= 258);
+    assert(3 <= len && len < deflate_len_count);
     uint8_t  i = deflate_len_index[len];
     uint16_t b = deflate_len_base[i];
     uint8_t  x = deflate_len_extra_bits[i];
@@ -230,6 +230,7 @@ static inline void squeeze_encode_pos(squeeze_type* s, const uint16_t pos) {
 
 static void squeeze_compress(squeeze_type* s, const uint8_t* data, uint64_t bytes, 
                              uint16_t window) {
+    enum { deflate_max_len = 255 };
     size_t pl_bytes = 0;
     size_t as_bytes = 0;
     huffman_insert(&s->lit, squeeze_lit_nyt);
@@ -326,6 +327,50 @@ static void squeeze_read_header(bitstream_type* bs, uint64_t *bytes,
     }
 }
 
+static uint16_t squeeze_read_length(squeeze_type* s, uint16_t lit) {
+    const uint8_t base = (uint8_t)(lit - 257);
+    if (base >= countof(deflate_len_base)) { 
+        s->error = EINVAL;
+        return 0;
+    } else {
+        const uint8_t bits = deflate_len_extra_bits[base];
+        if (bits != 0) {
+            uint64_t extra = squeeze_read_bits(s, bits);
+            assert(deflate_len_base[base] + extra <= UINT16_MAX);
+            return s->error == 0 ? 
+                (uint16_t)deflate_len_base[base] + (uint16_t)extra : 0;
+        } else {
+            return deflate_len_base[base];
+        }
+    }
+}
+
+static uint32_t squeeze_read_pos(squeeze_type* s) {
+    uint64_t base = squeeze_read_huffman(s, &s->pos);
+    if (s->error == 0 && base == squeeze_pos_nyt) {
+        base = squeeze_read_bits(s, 5);
+        if (s->error == 0) { 
+            // TODO: error if cannot insert
+            huffman_insert(&s->pos, (int32_t)base);
+        }
+    }
+    if (s->error == 0 && base >= countof(deflate_pos_base)) {
+        s->error = EINVAL;
+    }
+    if (s->error == 0) { 
+        uint8_t bits  = deflate_pos_extra_bits[base];
+        if (bits > 0) {
+            uint64_t extra = squeeze_read_bits(s, bits);
+            return s->error == 0 ?
+                (uint32_t)deflate_pos_base[base] + (uint32_t)extra : 0;
+        } else {
+            return (uint32_t)deflate_pos_base[base];
+        }
+    } else {
+        return 0;
+    }
+}
+
 static void squeeze_decompress(squeeze_type* s, uint8_t* data, uint64_t bytes) {
     huffman_insert(&s->lit, squeeze_lit_nyt);
     huffman_insert(&s->pos, squeeze_pos_nyt);
@@ -333,38 +378,34 @@ static void squeeze_decompress(squeeze_type* s, uint8_t* data, uint64_t bytes) {
     size_t i = 0; // output b64[i]
     while (i < bytes && s->error == 0) {
         uint64_t lit = squeeze_read_huffman(s, &s->lit);
+        if (s->error != 0) { break; }
         if (lit == squeeze_lit_nyt) {
             lit = squeeze_read_bits(s, 9);
+            if (s->error != 0) { break; }
+            // TODO: error if insert fails
             huffman_insert(&s->lit, (int32_t)lit);
         }
         if (lit <= 0xFF) {
             data[i] = (uint8_t)lit;
             i++;
         } else {
-            assert(257 <= lit && lit <= squeeze_lit_nyt);
-            if (257 <= lit && lit <= squeeze_lit_nyt) {
-                uint8_t  len_base   = (uint8_t)(lit - 257);
-                uint8_t  len_bits   = deflate_len_extra_bits[len_base];
-                uint64_t len_extra = len_bits == 0 ? 0 : squeeze_read_bits(s, len_bits);
-                uint32_t len = (uint32_t)deflate_len_base[len_base] + (uint32_t)len_extra;
-                uint64_t pos_base = squeeze_read_huffman(s, &s->pos);
-                squeeze_if_error_return(s);
-                if (pos_base == squeeze_pos_nyt) {
-                    pos_base = squeeze_read_bits(s, 5);
-                    squeeze_if_error_return(s);
-                    huffman_insert(&s->pos, (int32_t)pos_base);
+            assert(257 <= lit && lit < squeeze_lit_nyt);
+            if (257 <= lit && lit < squeeze_lit_nyt) {
+                uint32_t len = squeeze_read_length(s, (uint16_t)lit);
+                if (s->error != 0) { break; }
+                assert(3 <= len && len < deflate_len_count); 
+                if (len < 3 || len >= deflate_len_count) { 
+                    s->error = EINVAL; 
+                } else {
+                    uint32_t pos = squeeze_read_pos(s);
+                    if (s->error == 0) {
+                        // Cannot do memcpy() because of overlaped regions.
+                        // memcpy() may read more than one byte at a time.
+                        uint8_t* d = data - (size_t)pos;
+                        const size_t n = i + (size_t)len;
+                        while (i < n) { data[i] = d[i]; i++; }
+                    }
                 }
-                uint8_t  pos_bits  = deflate_pos_extra_bits[pos_base];
-                uint64_t pos_extra = pos_bits == 0 ? 0 : squeeze_read_bits(s, pos_bits);
-                uint32_t pos = (uint32_t)deflate_pos_base[pos_base] + (uint32_t)pos_extra;
-                squeeze_if_error_return(s);
-                assert(3 <= len);
-                if (len < 3) { squeeze_return_invalid(s); }
-                // Cannot do memcpy() here because of possible overlap.
-                // memcpy() may read more than one byte at a time.
-                uint8_t* d = data - (size_t)pos;
-                const size_t n = i + (size_t)len;
-                while (i < n) { data[i] = d[i]; i++; }
             } else {
                 s->error = EINVAL;
             }
