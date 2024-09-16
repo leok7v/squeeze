@@ -17,6 +17,11 @@ enum { bits_win = 11 };
 enum { bits_win = 15 };
 #endif
 
+// bits_win = 15:
+// 4436173 -> 1451352 32.7% of "bible.txt"
+// zip: (MS Windows)
+// 4436173 -> 1398871 31.5% of "bible.txt"
+
 static squeeze_type* squeeze_new(bitstream_type* bs, uint8_t win_bits) {
     const uint64_t bytes = squeeze_sizeof(win_bits);
     squeeze_type* s = (squeeze_type*)calloc(1, (size_t)bytes);
@@ -116,7 +121,7 @@ static errno_t verify(const char* fn, const uint8_t* input, size_t size) {
                 fclose(in);
                 return ENOMEM;
             }
-            squeeze.decompress(s, data, bytes);
+            squeeze.decompress(s, data, bytes, 1 << win_bits);
             fclose(in);
             assert(s->error == 0);
             if (s->error == 0) {
@@ -219,50 +224,3 @@ int main(int argc, const char* argv[]) {
 
 #define squeeze_implementation
 #include "squeeze.h"
-
-#if 0
-
-WITHOUT HUFFMAN:
-
-     35 ->      32  91.4%
-   4096 ->      16   0.4%
-   4096 ->      24   0.6%
-  10502 ->    3928  37.4% of "test.c"
- 229376 ->  129248  56.3% of "sqz.exe"
-4436173 -> 2334152  52.6% of "bible.txt"
- 279056 ->  179992  64.5% of "hhgttg.txt"
-  68762 ->   39232  57.1% of "confucius.txt"
-  20943 ->   12728  60.8% of "laozi.txt"
-8182289 -> 3519736  43.0% of "sqlite3.c"
- 847400 ->  522224  61.6% of "arm64.elf"
- 926536 ->  562440  60.7% of "x64.elf"
- 786570 ->  830336 105.6% of "mandrill.bmp"
- 627896 ->  667472 106.3% of "mandrill.png"
-
-WITH HUFFMAN + DICTIONARY:
-
-     35 ->      40 114.3%
-   4096 ->      24   0.6%
-   4096 ->      24   0.6%
-  10716 ->    3616  33.7% of "test.c"
- 231424 ->  116680  50.4% of "sqz.exe"
-4436173 -> 1801336  40.6% of "bible.txt"
- 279056 ->  140952  50.5% of "hhgttg.txt"
-  68762 ->   32424  47.2% of "confucius.txt"
-  20943 ->   10664  50.9% of "laozi.txt"
-8182289 -> 2707072  33.1% of "sqlite3.c"
- 847400 ->  456024  53.8% of "arm64.elf"
- 926536 ->  514016  55.5% of "x64.elf"
- 786570 ->  910648 115.8% of "mandrill.bmp"
- 627896 ->  747184 119.0% of "mandrill.png"
-
-// bible.txt.zip size (zip: 1,398,871 bytes)
-// enum { bits_win = 12, bits_map = 19, bits_len = 4 }; // 1801336
-// enum { bits_win = 12, bits_map = 14, bits_len = 5 }; // 1736248
-// enum { bits_win = 13, bits_map = 15, bits_len = 6 }; // 1683192
-// enum { bits_win = 14, bits_map = 16, bits_len = 7 }; // 1623176
-// enum { bits_win = 15, bits_map = 17, bits_len = 8 }; // 1559648
-// enum { bits_win = 16, bits_map = 18, bits_len = 8 }; // 1496552
-
-
-#endif

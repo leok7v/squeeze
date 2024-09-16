@@ -8,8 +8,8 @@ enum {
     deflate_pos_count = 32768 + 1
 };
 
-static uint8_t deflate_len_index[deflate_len_count];
-static uint8_t deflate_pos_index[deflate_pos_count];
+static uint8_t deflate_len_index[deflate_len_count]; // index of deflate_len_base
+static uint8_t deflate_pos_index[deflate_pos_count]; // index of deflate_pos_base
 
 static const uint16_t deflate_len_base[29] = {
     3, 4, 5, 6, 7, 8, 9, 10,  // 257-264

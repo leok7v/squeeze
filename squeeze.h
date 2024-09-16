@@ -46,9 +46,11 @@ typedef struct {
     // `win_bits` is a log2 of window size in bytes in range
     // [squeeze_min_win_bits..squeeze_max_win_bits]
     void (*write_header)(bitstream_type* bs, uint64_t bytes, uint8_t win_bits);
-    void (*compress)(squeeze_type* s, const uint8_t* data, size_t bytes, uint16_t window);
+    void (*compress)(squeeze_type* s, const uint8_t* data, size_t bytes, 
+                     uint16_t window);
     void (*read_header)(bitstream_type* bs, uint64_t *bytes, uint8_t *win_bits);
-    void (*decompress)(squeeze_type* s, uint8_t* data, size_t bytes);
+    void (*decompress)(squeeze_type* s, uint8_t* data, size_t bytes,
+                       uint16_t window);
 } squeeze_interface;
 
 extern squeeze_interface squeeze;
@@ -195,7 +197,7 @@ static inline void squeeze_encode_literal(squeeze_type* s, const uint16_t lit) {
         assert(s->lit.node[squeeze_lit_nyt].bits != 0);
         squeeze_write_huffman(s, &s->lit, squeeze_lit_nyt);
         squeeze_write_bits(s, lit, 9);
-        huffman_insert(&s->lit, lit);
+        if (!huffman_insert(&s->lit, lit)) { s->error = E2BIG; }
     } else {
         squeeze_write_huffman(s, &s->lit, lit);
     }
@@ -220,7 +222,7 @@ static inline void squeeze_encode_pos(squeeze_type* s, const uint16_t pos) {
         assert(s->pos.node[squeeze_pos_nyt].bits != 0);
         squeeze_write_huffman(s, &s->pos, squeeze_pos_nyt);
         squeeze_write_bits(s, i, 5); // 0..29
-        huffman_insert(&s->pos, i);
+        if (!huffman_insert(&s->pos, i)) { s->error = E2BIG; }
     } else {
         squeeze_write_huffman(s, &s->pos, i);
     }
@@ -346,32 +348,33 @@ static uint16_t squeeze_read_length(squeeze_type* s, uint16_t lit) {
 }
 
 static uint32_t squeeze_read_pos(squeeze_type* s) {
+    uint32_t pos = 0;
     uint64_t base = squeeze_read_huffman(s, &s->pos);
     if (s->error == 0 && base == squeeze_pos_nyt) {
         base = squeeze_read_bits(s, 5);
         if (s->error == 0) { 
-            // TODO: error if cannot insert
-            huffman_insert(&s->pos, (int32_t)base);
+            if (!huffman_insert(&s->pos, (int32_t)base)) {
+                s->error = E2BIG;
+            }
         }
     }
     if (s->error == 0 && base >= countof(deflate_pos_base)) {
         s->error = EINVAL;
+    } else {
+        pos = deflate_pos_base[base];
     }
     if (s->error == 0) { 
         uint8_t bits  = deflate_pos_extra_bits[base];
         if (bits > 0) {
             uint64_t extra = squeeze_read_bits(s, bits);
-            return s->error == 0 ?
-                (uint32_t)deflate_pos_base[base] + (uint32_t)extra : 0;
-        } else {
-            return (uint32_t)deflate_pos_base[base];
+            if (s->error == 0) { pos += (uint32_t)extra; }
         }
-    } else {
-        return 0;
     }
+    return pos;
 }
 
-static void squeeze_decompress(squeeze_type* s, uint8_t* data, uint64_t bytes) {
+static void squeeze_decompress(squeeze_type* s, uint8_t* data, uint64_t bytes,
+                               uint16_t window) {
     huffman_insert(&s->lit, squeeze_lit_nyt);
     huffman_insert(&s->pos, squeeze_pos_nyt);
     deflate_init();
@@ -383,7 +386,10 @@ static void squeeze_decompress(squeeze_type* s, uint8_t* data, uint64_t bytes) {
             lit = squeeze_read_bits(s, 9);
             if (s->error != 0) { break; }
             // TODO: error if insert fails
-            huffman_insert(&s->lit, (int32_t)lit);
+            if (!huffman_insert(&s->lit, (int32_t)lit)) {
+                s->error = E2BIG;
+                break;
+            }
         }
         if (lit <= 0xFF) {
             data[i] = (uint8_t)lit;
@@ -398,12 +404,16 @@ static void squeeze_decompress(squeeze_type* s, uint8_t* data, uint64_t bytes) {
                     s->error = EINVAL; 
                 } else {
                     uint32_t pos = squeeze_read_pos(s);
-                    if (s->error == 0) {
-                        // Cannot do memcpy() because of overlaped regions.
+                    if (s->error != 0) { break; }
+                    assert(0 < pos && pos < window);
+                    if (0 < pos && pos < window) {
+                        // Cannot do memcpy() because of overlapped regions.
                         // memcpy() may read more than one byte at a time.
                         uint8_t* d = data - (size_t)pos;
                         const size_t n = i + (size_t)len;
                         while (i < n) { data[i] = d[i]; i++; }
+                    } else {
+                        s->error = EINVAL;
                     }
                 }
             } else {

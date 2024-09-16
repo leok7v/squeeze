@@ -31,7 +31,7 @@ typedef struct huffman_tree_struct {
 } huffman_tree_type;
 
 static inline void   huffman_init(huffman_tree_type* t, huffman_node_type nodes[], const size_t m);
-static inline void   huffman_insert(huffman_tree_type* t, int32_t i);
+static inline bool   huffman_insert(huffman_tree_type* t, int32_t i);
 static inline void   huffman_inc_frequency(huffman_tree_type* t, int32_t symbol);
 static inline double huffman_entropy(const huffman_tree_type* t); // Shannon entropy (bps)
 
@@ -156,7 +156,8 @@ static inline void huffman_frequency_changed(huffman_tree_type* t, int32_t i) {
     }
 }
 
-static void huffman_insert(huffman_tree_type* t, int32_t i) {
+static bool huffman_insert(huffman_tree_type* t, int32_t i) {
+    bool done = true;
     const int32_t root = t->n * 2 - 1 - 1;
     int32_t ipx = root;
     assert(t->node[i].pix == -1 && t->node[i].lix == -1 && t->node[i].rix == -1);
@@ -187,6 +188,7 @@ static void huffman_insert(huffman_tree_type* t, int32_t i) {
     } else { // leaf
         assert(t->next > t->n);
         if (t->next == t->n) {
+            done = false; // cannot insert
             t->complete = true;
         } else {
             t->next--;
@@ -220,6 +222,7 @@ static void huffman_insert(huffman_tree_type* t, int32_t i) {
     huffman_frequency_changed(t, i);
     huffman_update_paths(t, ipx);
     assert(t->node[i].freq != 0 && t->node[i].bits != 0);
+    return done;
 }
 
 static inline void huffman_inc_frequency(huffman_tree_type* t, int32_t i) {
