@@ -10,10 +10,12 @@
 #include "squeeze.h"
 #include "file.h"
 
-#ifdef SQUEEZE_MAX_WINDOW // maximum 32K window
-enum { bits_win = 15 };
+#ifdef SQUEEZE_MAX_WINDOW // maximum window
+enum { bits_win = 15 }; // 32KB
+#elif defined(DEBUG) || defined(_DEBUG)
+enum { bits_win = 10 }; // 1KB
 #else
-enum { bits_win = 10 };
+enum { bits_win = 11 }; // 2KB
 #endif
 
 // bits_win = 15:
@@ -34,7 +36,7 @@ static errno_t compress(const char* from, const char* to,
         printf("Failed to create \"%s\": %s\n", to, strerror(r));
         return r;
     }
-    squeeze_type s = {0};
+    static squeeze_type s; // static to avoid >64KB stack warning
     squeeze.init(&s);
     bitstream bs = { .stream = out, .output = write_file };
     squeeze.write_header(&bs, bytes);
@@ -57,7 +59,7 @@ static errno_t compress(const char* from, const char* to,
         char* fn = from == null ? null : strrchr(from, '\\'); // basename
         if (fn == null) { fn = from == null ? null : strrchr(from, '/'); }
         if (fn != null) { fn++; } else { fn = (char*)from; }
-        const uint64_t written = s.bs->bytes;
+        const uint64_t written = bs.bytes;
         double percent = written * 100.0 / bytes;
         if (from != null) {
             printf("%7lld -> %7lld %5.1f%% of \"%s\"\n", bytes, written,
@@ -91,7 +93,7 @@ static errno_t verify(const char* fn, const uint8_t* input, size_t size) {
         }
     }
     if (r == 0) {
-        squeeze_type s = {0};
+        static squeeze_type s; // static to avoid >64KB stack warning
         squeeze.init(&s);
         assert(bytes == size);
         uint8_t* data = (uint8_t*)calloc(1, (size_t)bytes);
@@ -110,13 +112,11 @@ static errno_t verify(const char* fn, const uint8_t* input, size_t size) {
                 for (size_t i = 0; i < rt_min(bytes, size) && k < 0; i++) {
                     if (input[i] != data[i]) { k = (int64_t)i; }
                 }
-                printf("compress() and decompress() are not the same @%lld\n", k);
+                printf("compress() and decompress() differ @%lld\n", k);
                 // ENODATA is not original posix error but is OpenGroup error
                 r = ENODATA; // or EIO
-            } else if (bytes < 128) {
-//              printf("decompressed: %.*s\n", (unsigned int)bytes, data);
             }
-            assert(same);
+            assert(same); // to trigger breakpoint while debugging
         } else {
             r = s.error;
         }

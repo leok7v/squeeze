@@ -23,55 +23,55 @@ enum { // "nyt" stands for Not Yet Transmitted (see Vitter Algorithm)
 // deflate tables
 
 static const uint16_t squeeze_len_base[29] = {
-    3, 4, 5, 6, 7, 8, 9, 10,  // 257-264
-    11, 13, 15, 17,           // 265-268
-    19, 23, 27, 31,           // 269-272
-    35, 43, 51, 59,           // 273-276
-    67, 83, 99, 115,          // 277-280
-    131, 163, 195, 227, 258   // 281-285
+    3, 4, 5, 6, 7, 8, 9, 10, // 257-264
+    11, 13, 15, 17,          // 265-268
+    19, 23, 27, 31,          // 269-272
+    35, 43, 51, 59,          // 273-276
+    67, 83, 99, 115,         // 277-280
+    131, 163, 195, 227, 258  // 281-285
 };
 
 static const uint8_t squeeze_len_xb[29] = { // extra bits
-    0, 0, 0, 0, 0, 0, 0, 0,   // 257-264
-    1, 1, 1, 1,               // 265-268
-    2, 2, 2, 2,               // 269-272
-    3, 3, 3, 3,               // 273-276
-    4, 4, 4, 4,               // 277-280
-    5, 5, 5, 5, 0             // 281-285 (len = 258 has no extra bits)
+    0, 0, 0, 0, 0, 0, 0, 0, // 257-264
+    1, 1, 1, 1,             // 265-268
+    2, 2, 2, 2,             // 269-272
+    3, 3, 3, 3,             // 273-276
+    4, 4, 4, 4,             // 277-280
+    5, 5, 5, 5, 0           // 281-285 (len = 258 has no extra bits)
 };
 
 static const uint16_t squeeze_pos_base[30] = {
-    1, 2, 3, 4,               // 0-3
-    5, 7,                     // 4-5
-    9, 13,                    // 6-7
-    17, 25,                   // 8-9
-    33, 49,                   // 10-11
-    65, 97,                   // 12-13
-    129, 193,                 // 14-15
-    257, 385,                 // 16-17
-    513, 769,                 // 18-19
-    1025, 1537,               // 20-21
-    2049, 3073,               // 22-23
-    4097, 6145,               // 24-25
-    8193, 12289,              // 26-27
-    16385, 24577              // 28-29
+    1, 2, 3, 4,  // 0-3
+    5, 7,        // 4-5
+    9, 13,       // 6-7
+    17, 25,      // 8-9
+    33, 49,      // 10-11
+    65, 97,      // 12-13
+    129, 193,    // 14-15
+    257, 385,    // 16-17
+    513, 769,    // 18-19
+    1025, 1537,  // 20-21
+    2049, 3073,  // 22-23
+    4097, 6145,  // 24-25
+    8193, 12289, // 26-27
+    16385, 24577 // 28-29
 };
 
 static const uint8_t squeeze_pos_xb[30] = { // extra bits
-    0, 0, 0, 0,               // 0-3
-    1, 1,                     // 4-5
-    2, 2,                     // 6-7
-    3, 3,                     // 8-9
-    4, 4,                     // 10-11
-    5, 5,                     // 12-13
-    6, 6,                     // 14-15
-    7, 7,                     // 16-17
-    8, 8,                     // 18-19
-    9, 9,                     // 20-21
-    10, 10,                   // 22-23
-    11, 11,                   // 24-25
-    12, 12,                   // 26-27
-    13, 13                    // 28-29
+    0, 0, 0, 0, // 0-3
+    1, 1,       // 4-5
+    2, 2,       // 6-7
+    3, 3,       // 8-9
+    4, 4,       // 10-11
+    5, 5,       // 12-13
+    6, 6,       // 14-15
+    7, 7,       // 16-17
+    8, 8,       // 18-19
+    9, 9,       // 20-21
+    10, 10,     // 22-23
+    11, 11,     // 24-25
+    12, 12,     // 26-27
+    13, 13      // 28-29
 };
 
 typedef struct huffman_node {
@@ -160,10 +160,12 @@ extern squeeze_interface squeeze;
 #endif
 #include <string.h>
 
-static inline void     bitstream_create(bitstream* bs, void* data, size_t capacity);
+static inline void     bitstream_create(bitstream* bs, void* data,
+                                                       size_t capacity);
 static inline void     bitstream_write_bit(bitstream* bs, int32_t bit);
-static inline void     bitstream_write_bits(bitstream* bs, uint64_t data, int32_t bits);
-static inline int      bitstream_read_bit(bitstream* bs); // 0|1 "int" used as bool
+static inline void     bitstream_write_bits(bitstream* bs, uint64_t data,
+                                                           int32_t bits);
+static inline int      bitstream_read_bit(bitstream* bs); // bool 0|1 "int"
 static inline uint64_t bitstream_read_bits(bitstream* bs, int32_t bits);
 static inline void     bitstream_flush(bitstream* bs); // write trailing zeros
 static inline void     bitstream_dispose(bitstream* bs);
@@ -245,11 +247,11 @@ static inline uint64_t bitstream_read_bits(bitstream* bs, int32_t bits) {
     return data;
 }
 
-static inline void bitstream_create(bitstream* bs, void* data, size_t capacity) {
+static inline void bitstream_create(bitstream* bs, void* data, size_t bytes) {
     assert(bs->data != null);
     memset(bs, 0x00, sizeof(*bs));
     bs->data = (uint8_t*)data;
-    bs->capacity  = capacity;
+    bs->capacity = bytes;
 }
 
 static inline void bitstream_flush(bitstream* bs) {
@@ -262,10 +264,11 @@ static inline void bitstream_dispose(bitstream* bs) {
 
 // Huffman Adaptive Coding https://en.wikipedia.org/wiki/Adaptive_Huffman_coding
 
-static inline void   huffman_init(huffman_tree* t, huffman_node nodes[], const size_t m);
+static inline void   huffman_init(huffman_tree* t, huffman_node nodes[],
+                                                   const size_t m);
 static inline bool   huffman_insert(huffman_tree* t, int32_t i);
-static inline void   huffman_inc_frequency(huffman_tree* t, int32_t symbol);
-static inline double huffman_entropy(const huffman_tree* t); // Shannon entropy (bps)
+static inline bool   huffman_inc_frequency(huffman_tree* t, int32_t symbol);
+static inline double huffman_entropy(const huffman_tree* t); // Shannon (bps)
 
 static void huffman_update_paths(huffman_tree* t, int32_t i) {
     t->stats.updates++;
@@ -444,23 +447,32 @@ static bool huffman_insert(huffman_tree* t, int32_t i) {
     return done;
 }
 
-static inline void huffman_inc_frequency(huffman_tree* t, int32_t i) {
+// If input literal frequencies are severely skewed (e.g. Lucas numbers
+// similar to Fibonacci numbers) and input sequence is long enough.
+// The depth of the tree will grow past 64 bits.
+// The first Lucas number that exceeds 2^64 is
+// L(81) = 18,446,744,073,709,551,616 not actually realistic but
+// better be safe than sorry
+
+// huffman_inc_frequency() returns false on conditions inability to insert
+// new node and tree being too deep of frequency too high
+// The inability to insert new node should be treated as fatal outside
+// huffman_inc_frequency() call.
+
+static inline bool huffman_inc_frequency(huffman_tree* t, int32_t i) {
+    bool done = true;
     assert(0 <= i && i < t->n); // terminal
-    // If input sequence frequencies are severely skewed (e.g. Lucas numbers
-    // similar to Fibonacci numbers) and input sequence is long enough.
-    // The depth of the tree will grow past 64 bits.
-    // The first Lucas number that exceeds 2^64 is
-    // L(81) = 18,446,744,073,709,551,616 not actually realistic but
-    // better be safe than sorry:
     if (t->node[i].pix == -1) {
-        huffman_insert(t, i); // Unseen terminal node.
+        done = huffman_insert(t, i); // Unseen terminal node.
     } else if (!t->complete && t->depth < 63 && t->node[i].freq < UINT64_MAX - 1) {
         t->node[i].freq++;
         huffman_frequency_changed(t, i);
     } else {
         // ignore future frequency updates
         t->complete = 1;
+        done = false;
     }
+    return done;
 }
 
 static inline double huffman_entropy(const huffman_tree* t) {
@@ -550,7 +562,8 @@ static inline void squeeze_write_huffman(squeeze_type* s, huffman_tree* t,
     assert(0 <= i && i < t->n); // leaf symbol (literal)
     assert(1 <= t->node[i].bits && t->node[i].bits < 64);
     squeeze_write_bits(s, t->node[i].path, (uint8_t)t->node[i].bits);
-    huffman_inc_frequency(t, i); // after the path is written
+    (void)huffman_inc_frequency(t, i); // after the path is written
+    // (void) because inability to update frequency is OK here
 }
 
 static inline void squeeze_flush(squeeze_type* s) {
@@ -687,7 +700,8 @@ static inline uint64_t squeeze_read_huffman(squeeze_type* s, huffman_tree* t) {
         bit = squeeze_read_bit(s);
     }
     assert(0 <= i && i < t->n); // leaf symbol (literal)
-    huffman_inc_frequency(t, i);
+    (void)huffman_inc_frequency(t, i);
+    // (void) because inability to update frequency is OK here
     return (uint64_t)i;
 }
 
