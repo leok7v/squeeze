@@ -12,8 +12,11 @@ https://en.wikipedia.org/wiki/Deflate
 
 ### Goals:
 
-* Simplicity.
+* Simplicity. (LoC bitstream.h:127 huffman.h:260 squeeze.h:612 + map.h:134 = 1133)
 * Ease of build and use.
+* Can be amalgamated into single header file library.
+* No external dependencies.
+* No on the fly memory heap usage (can work with static or externally allocaed object)
 
 ### No goals:
 
