@@ -8,12 +8,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="../rt.h" />
-    <ClInclude Include="..\bitstream.h" />
-    <ClInclude Include="..\huffman.h" />
     <ClInclude Include="..\rt_generics.h" />
     <ClInclude Include="..\file.h" />
     <ClInclude Include="..\squeeze.h" />
-    <ClInclude Include="..\map.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="../scripts/download.bat" />

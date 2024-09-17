@@ -1,10 +1,8 @@
 #ifndef squeeze_header_included
 #define squeeze_header_included
 
-#include "bitstream.h"
-#include "huffman.h"
-#include "map.h"
-
+#include <errno.h>
+#include <stdint.h>
 
 enum {
     squeeze_deflate_sym_min   = 257, // minimum literal for length base
@@ -18,8 +16,6 @@ enum {
 enum { // "nyt" stands for Not Yet Transmitted (see Vitter Algorithm)
     squeeze_min_win_bits  =  10,
     squeeze_max_win_bits  =  15,
-    squeeze_min_map_bits  =  16,
-    squeeze_max_map_bits  =  28,
     squeeze_lit_nyt       =  squeeze_deflate_sym_max + 1,
     squeeze_pos_nyt       =  squeeze_deflate_pos_max + 1,
 };
@@ -78,50 +74,63 @@ static const uint8_t squeeze_pos_xb[30] = { // extra bits
     13, 13                    // 28-29
 };
 
+typedef struct huffman_node {
+    uint64_t freq;
+    uint64_t path;
+    int32_t  bits; // 0 for root
+    int32_t  pix;  // parent
+    int32_t  lix;  // left
+    int32_t  rix;  // right
+} huffman_node;
+
+typedef struct huffman_tree {
+    huffman_node* node;
+    int32_t n;
+    int32_t next;  // next non-terminal nodes in the tree >= n
+    int32_t depth; // max tree depth seen
+    int32_t complete; // tree is too deep or freq too high - no more updates
+    // stats:
+    struct {
+        size_t updates;
+        size_t swaps;
+        size_t moves;
+    } stats;
+} huffman_tree;
+
+typedef struct bitstream {
+    void*    stream; // stream and (data,capacity) are exclusive
+    uint8_t* data;
+    uint64_t capacity; // data[capacity]
+    uint64_t bytes; // number of bytes written
+    uint64_t read;  // number of bytes read
+    uint64_t b64;   // bit shifting buffer
+    int32_t  bits;  // bit count inside b64
+    errno_t  error; // sticky error
+    errno_t (*output)(struct bitstream* bs); // write b64 as 8 bytes
+    errno_t (*input)(struct bitstream* bs);  // read b64 as 8 bytes
+} bitstream;
+
 typedef struct {
     errno_t error; // sticky
-    huffman_tree  lit; // 0..255 literal bytes; 257-285 length
-    huffman_tree  pos; // positions tree of 1^win_bits
-    huffman_node* lit_nodes; // 512 * 2 - 1
-    huffman_node* pos_nodes; //  32 * 2 - 1
-    map_type           map;
-    map_entry*         map_entry;
+    huffman_tree lit; // 0..255 literal bytes; 257-285 length
+    huffman_tree pos; // positions tree of 1^win_bits
+    huffman_node lit_nodes[512 * 2 - 1];
+    huffman_node pos_nodes[32 * 2 - 1];
     bitstream*         bs;
-    uint8_t len_index[squeeze_deflate_sym_max + 1]; // index of squeeze_len_base
-    uint8_t pos_index[1u << 15];                    // index of squeeze_pos_base
+    uint8_t len_index[squeeze_deflate_sym_max + 1]; // index squeeze_len_base
+    uint8_t pos_index[1u << 15];                    // index squeeze_pos_base
 } squeeze_type;
 
-#define squeeze_size_mul(name, count) (                                 \
-    ((uint64_t)(count) >= ((SIZE_MAX / 4) / (uint64_t)sizeof(name))) ?  \
-    0 : (size_t)((uint64_t)sizeof(name) * (uint64_t)(count))            \
-)
-
-#define squeeze_sizeof(map_bits) (                                      \
-    (sizeof(squeeze_type)) +                                            \
-    /* lit_nodes: */                                                    \
-    squeeze_size_mul(huffman_node, (512uLL * 2ULL - 1ULL)) +            \
-    /* pos_nodes: */                                                    \
-    squeeze_size_mul(huffman_node, ((1uLL << 5) * 2ULL - 1ULL)) +       \
-    /* pos_nodes: */                                                    \
-    squeeze_size_mul(map_entry, (1uLL << (map_bits)))                   \
-)
-
 typedef struct {
-    squeeze_type* (*alloc)(uint8_t map_bits);
-    errno_t (*init_with)(squeeze_type* s,
-                         void* memory, size_t size, uint8_t map_bits);
+    void (*init)(squeeze_type* s);
     // `win_bits` is a log2 of window size in bytes in range
     // [squeeze_min_win_bits..squeeze_max_win_bits]
-    void (*write_header)(bitstream* bs, uint64_t bytes, uint8_t win_bits);
-    void (*compress)(squeeze_type* s,
-                     bitstream* bs,
-                     const uint8_t* data, size_t bytes,
-                     uint16_t window);
-    void (*read_header)(bitstream* bs, uint64_t *bytes, uint8_t *win_bits);
-    void (*decompress)(squeeze_type* s,
-                       bitstream* bs,
+    void (*write_header)(bitstream* bs, uint64_t bytes);
+    void (*compress)(squeeze_type* s, bitstream* bs,
+                     const uint8_t* data, size_t bytes, uint16_t window);
+    void (*read_header)(bitstream* bs, uint64_t *bytes);
+    void (*decompress)(squeeze_type* s, bitstream* bs,
                        uint8_t* data, size_t bytes);
-    void (*free)(squeeze_type* s);
 } squeeze_interface;
 
 #if defined(__cplusplus)
@@ -136,6 +145,8 @@ extern squeeze_interface squeeze;
 
 #define squeeze_implemented
 
+// https://stackoverflow.com/questions/76899757/how-can-i-use-nullptr-for-null-pointers-prior-to-c23
+
 #ifndef null
 #define null ((void*)0) // like null_ptr better than NULL (0)
 #endif
@@ -147,6 +158,346 @@ extern squeeze_interface squeeze;
 #ifndef assert
 #include <assert.h>
 #endif
+#include <string.h>
+
+static inline void     bitstream_create(bitstream* bs, void* data, size_t capacity);
+static inline void     bitstream_write_bit(bitstream* bs, int32_t bit);
+static inline void     bitstream_write_bits(bitstream* bs, uint64_t data, int32_t bits);
+static inline int      bitstream_read_bit(bitstream* bs); // 0|1 "int" used as bool
+static inline uint64_t bitstream_read_bits(bitstream* bs, int32_t bits);
+static inline void     bitstream_flush(bitstream* bs); // write trailing zeros
+static inline void     bitstream_dispose(bitstream* bs);
+
+static inline void bitstream_write_bit(bitstream* bs, int32_t bit) {
+    if (bs->error == 0) {
+        bs->b64 <<= 1;
+        bs->b64 |= (bit & 1);
+        bs->bits++;
+        if (bs->bits == 64) {
+            if (bs->data != null && bs->capacity > 0) {
+                assert(bs->stream == null);
+                for (int i = 0; i < 8 && bs->error == 0; i++) {
+                    if (bs->bytes == bs->capacity) {
+                        bs->error = E2BIG;
+                    } else {
+                        uint8_t b = (uint8_t)(bs->b64 >> ((7 - i) * 8));
+                        bs->data[bs->bytes++] = b;
+                    }
+                }
+            } else {
+                assert(bs->data == null && bs->capacity == 0);
+                bs->error = bs->output(bs);
+                if (bs->error == 0) { bs->bytes += 8; }
+            }
+            bs->bits = 0;
+            bs->b64 = 0;
+        }
+    }
+}
+
+static inline void bitstream_write_bits(bitstream* bs,
+                                        uint64_t data, int32_t bits) {
+    assert(0 < bits && bits <= 64);
+    while (bits > 0 && bs->error == 0) {
+        bitstream_write_bit(bs, data & 1);
+        bits--;
+        data >>= 1;
+    }
+}
+
+static inline int bitstream_read_bit(bitstream* bs) {
+    int bit = 0;
+    if (bs->error == 0) {
+        if (bs->bits == 0) {
+            bs->b64 = 0;
+            if (bs->data != null && bs->bytes > 0) {
+                assert(bs->stream == null);
+                for (int i = 0; i < 8 && bs->error == 0; i++) {
+                    if (bs->read == bs->bytes) {
+                        bs->error = E2BIG;
+                    } else {
+                        const uint64_t byte = (bs->data[bs->read] & 0xFF);
+                        bs->b64 |= byte << ((7 - i) * 8);
+                        bs->read++;
+                    }
+                }
+            } else {
+                assert(bs->data == null && bs->bytes == 0);
+                bs->error = bs->input(bs);
+                if (bs->error == 0) { bs->read += 8; }
+            }
+            bs->bits = 64;
+        }
+        bit = ((int64_t)bs->b64) < 0; // same as (bs->b64 >> 63) & 1;
+        bs->b64 <<= 1;
+        bs->bits--;
+    }
+    return bit;
+}
+
+static inline uint64_t bitstream_read_bits(bitstream* bs, int32_t bits) {
+    uint64_t data = 0;
+    assert(0 < bits && bits <= 64);
+    for (int32_t b = 0; b < bits && bs->error == 0; b++) {
+        int bit = bitstream_read_bit(bs);
+        if (bit) { data |= ((uint64_t)bit) << b; }
+    }
+    return data;
+}
+
+static inline void bitstream_create(bitstream* bs, void* data, size_t capacity) {
+    assert(bs->data != null);
+    memset(bs, 0x00, sizeof(*bs));
+    bs->data = (uint8_t*)data;
+    bs->capacity  = capacity;
+}
+
+static inline void bitstream_flush(bitstream* bs) {
+    while (bs->bits > 0 && bs->error == 0) { bitstream_write_bit(bs, 0); }
+}
+
+static inline void bitstream_dispose(bitstream* bs) {
+    memset(bs, 0x00, sizeof(*bs));
+}
+
+// Huffman Adaptive Coding https://en.wikipedia.org/wiki/Adaptive_Huffman_coding
+
+static inline void   huffman_init(huffman_tree* t, huffman_node nodes[], const size_t m);
+static inline bool   huffman_insert(huffman_tree* t, int32_t i);
+static inline void   huffman_inc_frequency(huffman_tree* t, int32_t symbol);
+static inline double huffman_entropy(const huffman_tree* t); // Shannon entropy (bps)
+
+static void huffman_update_paths(huffman_tree* t, int32_t i) {
+    t->stats.updates++;
+    const int32_t m = t->n * 2 - 1;
+    if (i == m - 1) { t->depth = 0; } // root
+    const int32_t  bits = t->node[i].bits;
+    const uint64_t path = t->node[i].path;
+    assert(bits < (int32_t)sizeof(uint64_t) * 8 - 1);
+    assert((path & (~((1ULL << (bits + 1)) - 1))) == 0);
+    const int32_t lix = t->node[i].lix;
+    const int32_t rix = t->node[i].rix;
+    if (lix != -1) {
+        t->node[lix].bits = bits + 1;
+        t->node[lix].path = path;
+        huffman_update_paths(t, lix);
+    }
+    if (rix != -1) {
+        t->node[rix].bits = bits + 1;
+        t->node[rix].path = path | (1ULL << bits);
+        huffman_update_paths(t, rix);
+    }
+    if (bits > t->depth) { t->depth = bits; }
+}
+
+static inline int32_t huffman_swap_siblings(huffman_tree* t,
+                                            const int32_t i) {
+    const int32_t m = t->n * 2 - 1;
+    assert(0 <= i && i < m);
+    if (i < m - 1) { // not root
+        const int32_t pix = t->node[i].pix;
+        assert(pix >= t->n); // parent (cannot be a leaf)
+        const int32_t lix = t->node[pix].lix;
+        const int32_t rix = t->node[pix].rix;
+        if (lix >= 0 && rix >= 0) {
+            assert(0 <= lix && lix < m - 1 && 0 <= rix && rix < m - 1);
+            if (t->node[lix].freq > t->node[rix].freq) { // swap
+                t->stats.swaps++;
+                t->node[pix].lix = rix;
+                t->node[pix].rix = lix;
+                // because swap changed all path below:
+                huffman_update_paths(t, pix);
+                return i == lix ? rix : lix;
+            }
+        }
+    }
+    return i;
+}
+
+static inline void huffman_frequency_changed(huffman_tree* t, int32_t ix);
+
+static inline void huffman_update_freq(huffman_tree* t, int32_t i) {
+    const int32_t lix = t->node[i].lix;
+    const int32_t rix = t->node[i].rix;
+    assert(lix != -1 || rix != -1); // at least one leaf present
+    t->node[i].freq = (lix >= 0 ? t->node[lix].freq : 0) +
+                      (rix >= 0 ? t->node[rix].freq : 0);
+}
+
+static inline void huffman_move_up(huffman_tree* t, int32_t ix) {
+    const int32_t pix = t->node[ix].pix; // parent
+    assert(pix != -1);
+    const int32_t gix = t->node[pix].pix; // grandparent
+    assert(gix != -1);
+    assert(t->node[pix].rix == ix);
+    // Is parent grandparent`s left or right child?
+    const bool parent_is_left_child = pix == t->node[gix].lix;
+    const int32_t psx = parent_is_left_child ? // parent sibling index
+        t->node[gix].rix : t->node[gix].lix;   // aka auntie/uncle
+    if (t->node[ix].freq > t->node[psx].freq) {
+        // Move grandparents left or right subtree to be
+        // parents right child instead of 'i'.
+        t->stats.moves++;
+        t->node[ix].pix = gix;
+        if (parent_is_left_child) {
+            t->node[gix].rix = ix;
+        } else {
+            t->node[gix].lix = ix;
+        }
+        t->node[pix].rix = psx;
+        t->node[psx].pix = pix;
+        huffman_update_freq(t, pix);
+        huffman_update_freq(t, gix);
+        huffman_swap_siblings(t, ix);
+        huffman_swap_siblings(t, psx);
+        huffman_swap_siblings(t, pix);
+        huffman_update_paths(t, gix);
+        huffman_frequency_changed(t, gix);
+    }
+}
+
+static inline void huffman_frequency_changed(huffman_tree* t, int32_t i) {
+    const int32_t m = t->n * 2 - 1; (void)m;
+    const int32_t pix = t->node[i].pix;
+    if (pix == -1) { // `i` is root
+        assert(i == m - 1);
+        huffman_update_freq(t, i);
+        i = huffman_swap_siblings(t, i);
+    } else {
+        assert(0 <= pix && pix < m);
+        huffman_update_freq(t, pix);
+        i = huffman_swap_siblings(t, i);
+        huffman_frequency_changed(t, pix);
+    }
+    if (pix != -1 && t->node[pix].pix != -1 && i == t->node[pix].rix) {
+        assert(t->node[i].freq >= t->node[t->node[pix].lix].freq);
+        huffman_move_up(t, i);
+    }
+}
+
+static bool huffman_insert(huffman_tree* t, int32_t i) {
+    bool done = true;
+    const int32_t root = t->n * 2 - 1 - 1;
+    int32_t ipx = root;
+    assert(t->node[i].pix == -1 && t->node[i].lix == -1 && t->node[i].rix == -1);
+    assert(t->node[i].freq == 0 && t->node[i].bits == 0 && t->node[i].path == 0);
+    t->node[i].freq = 1;
+    while (ipx >= t->n) {
+        if (t->node[ipx].rix == -1) {
+            t->node[ipx].rix = i;
+            t->node[i].pix = ipx;
+            break;
+        } else if (t->node[ipx].lix == -1) {
+            t->node[ipx].lix = i;
+            t->node[i].pix = ipx;
+            break;
+        } else {
+            assert(t->node[ipx].lix >= 0);
+            assert(t->node[i].freq <= t->node[t->node[ipx].lix].freq);
+            ipx = t->node[ipx].lix;
+        }
+    }
+    if (ipx >= t->n) { // not a leaf, inserted
+        t->node[ipx].freq++;
+        i = huffman_swap_siblings(t, i);
+        assert(t->node[ipx].lix == i || t->node[ipx].rix);
+        assert(t->node[ipx].freq ==
+                (t->node[ipx].rix >= 0 ? t->node[t->node[ipx].rix].freq : 0) +
+                (t->node[ipx].lix >= 0 ? t->node[t->node[ipx].lix].freq : 0));
+    } else { // leaf
+        assert(t->next > t->n);
+        if (t->next == t->n) {
+            done = false; // cannot insert
+            t->complete = true;
+        } else {
+            t->next--;
+            int32_t nix = t->next;
+            t->node[nix] = (huffman_node){
+                .freq = t->node[ipx].freq,
+                .lix = ipx,
+                .rix = -1,
+                .pix = t->node[ipx].pix,
+                .bits = t->node[ipx].bits,
+                .path = t->node[ipx].path
+            };
+            if (t->node[ipx].pix != -1) {
+                if (t->node[t->node[ipx].pix].lix == ipx) {
+                    t->node[t->node[ipx].pix].lix = nix;
+                } else {
+                    t->node[t->node[ipx].pix].rix = nix;
+                }
+            }
+            t->node[ipx].pix = nix;
+            t->node[ipx].bits++;
+            t->node[ipx].path = t->node[nix].path;
+            t->node[nix].rix = i;
+            t->node[i].pix = nix;
+            t->node[i].bits = t->node[nix].bits + 1;
+            t->node[i].path = t->node[nix].path | (1ULL << t->node[nix].bits);
+            huffman_update_freq(t, nix);
+            ipx = nix;
+        }
+    }
+    huffman_frequency_changed(t, i);
+    huffman_update_paths(t, ipx);
+    assert(t->node[i].freq != 0 && t->node[i].bits != 0);
+    return done;
+}
+
+static inline void huffman_inc_frequency(huffman_tree* t, int32_t i) {
+    assert(0 <= i && i < t->n); // terminal
+    // If input sequence frequencies are severely skewed (e.g. Lucas numbers
+    // similar to Fibonacci numbers) and input sequence is long enough.
+    // The depth of the tree will grow past 64 bits.
+    // The first Lucas number that exceeds 2^64 is
+    // L(81) = 18,446,744,073,709,551,616 not actually realistic but
+    // better be safe than sorry:
+    if (t->node[i].pix == -1) {
+        huffman_insert(t, i); // Unseen terminal node.
+    } else if (!t->complete && t->depth < 63 && t->node[i].freq < UINT64_MAX - 1) {
+        t->node[i].freq++;
+        huffman_frequency_changed(t, i);
+    } else {
+        // ignore future frequency updates
+        t->complete = 1;
+    }
+}
+
+static inline double huffman_entropy(const huffman_tree* t) {
+    // Shannon entropy
+    double total = 0;
+    double entropy = 0.0;
+    for (int32_t i = 0; i < t->n; i++) { total += (double)t->node[i].freq; }
+    for (int32_t i = 0; i < t->n; i++) {
+        if (t->node[i].freq > 0) {
+            double p_i = (double)t->node[i].freq / total;
+            entropy += p_i * log2(p_i);
+        }
+    }
+    return -entropy;
+}
+
+static inline void huffman_init(huffman_tree* t,
+                                huffman_node nodes[],
+                                const size_t count) {
+    assert(7 <= count && count < INT32_MAX); // must pow(2, bits_per_symbol) * 2 - 1
+    const int32_t n = (int32_t)(count + 1) / 2;
+    assert(n > 4 && (n & (n - 1)) == 0); // must be power of 2
+    memset(&t->stats, 0x00, sizeof(t->stats));
+    t->node = nodes;
+    t->n = n;
+    const int32_t root = n * 2 - 1;
+    t->next = root - 1; // next non-terminal node
+    t->depth = 0;
+    t->complete = 0;
+    for (size_t i = 0; i < count; i++) {
+        t->node[i] = (huffman_node){
+            .freq = 0, .pix = -1, .lix = -1, .rix = -1, .bits = 0, .path = 0
+        };
+    }
+}
+
+// Deflate https://en.wikipedia.org/wiki/Deflate
 
 static void squeeze_deflate_init(squeeze_type* s) {
     uint8_t  j = 0;
@@ -171,54 +522,11 @@ static void squeeze_deflate_init(squeeze_type* s) {
     assert(j == countof(squeeze_pos_base) - 1);
 }
 
-static squeeze_type* squeeze_alloc(uint8_t map_bits) {
-    const uint64_t bytes = squeeze_sizeof(map_bits);
-    squeeze_type* s = (squeeze_type*)calloc(1, (size_t)bytes);
-    if (s != null) {
-        errno_t r = squeeze.init_with(s, s, bytes, map_bits);
-        assert(r == 0);
-        if (r != 0) { free(s); s = null; }
-    }
-    return s;
-}
+// Squeeze https://en.wikipedia.org/wiki/LZ77_and_LZ78
 
-static void squeeze_free(squeeze_type* s) {
-    free(s);
-}
-
-static errno_t squeeze_init_with(squeeze_type* s, void* memory, size_t size,
-                                 uint8_t map_bits) {
-    errno_t r = (map_bits == 0 ||
-                 squeeze_min_map_bits <= map_bits &&
-                 map_bits <= squeeze_max_map_bits) ? 0 : EINVAL;
-    assert(r == 0);
-    size_t expected = r == 0 ? squeeze_sizeof(map_bits) : 0;
-    // 167,936,192 bytes for (win_bits = 11, map_bits = 19)
-    assert(size == expected);
-    if (r != 0 || memory == null || size != expected) {
-        r = EINVAL;
-    } else {
-        uint8_t* p = (uint8_t*)memory;
-        memset(memory, 0, sizeof(squeeze_type));
-        p += sizeof(squeeze_type);
-        const size_t lit_n = 512; // literals in range [0..286] always 512
-        const size_t pos_n = 32;
-        const size_t map_n = 1uLL << map_bits;
-        const size_t lit_m = lit_n * 2 - 1;
-        const size_t pos_m = pos_n * 2 - 1;
-        s->lit_nodes = (huffman_node*)p; p += sizeof(huffman_node) * lit_m;
-        s->pos_nodes = (huffman_node*)p; p += sizeof(huffman_node) * pos_m;
-        s->map_entry = (map_entry*)p;    p += sizeof(map_entry)    * map_n;
-        assert(p == (uint8_t*)memory + size);
-        huffman_init(&s->lit, s->lit_nodes, lit_m);
-        huffman_init(&s->pos, s->pos_nodes, pos_m);
-        if (map_bits != 0) {
-            map_init(&s->map, s->map_entry, map_n);
-        } else { // map is not used in decompress
-            memset(&s->map, 0x00, sizeof(s->map));
-        }
-    }
-    return r;
+static void squeeze_init(squeeze_type* s) {
+    huffman_init(&s->lit, s->lit_nodes, countof(s->lit_nodes));
+    huffman_init(&s->pos, s->pos_nodes, countof(s->pos_nodes));
 }
 
 static inline void squeeze_write_bit(squeeze_type* s, bool bit) {
@@ -252,16 +560,9 @@ static inline void squeeze_flush(squeeze_type* s) {
     }
 }
 
-static void squeeze_write_header(bitstream* bs, uint64_t bytes,
-                                 uint8_t win_bits) {
-    if (win_bits < squeeze_min_win_bits || win_bits > squeeze_max_win_bits) {
-        bs->error = EINVAL;
-    } else {
-        enum { bits64 = sizeof(uint64_t) * 8 };
-        bitstream_write_bits(bs, (uint64_t)bytes, bits64);
-        enum { bits8 = sizeof(uint8_t) * 8 };
-        bitstream_write_bits(bs, win_bits, bits8);
-    }
+static void squeeze_write_header(bitstream* bs, uint64_t bytes) {
+    enum { bits64 = sizeof(uint64_t) * 8 };
+    bitstream_write_bits(bs, (uint64_t)bytes, bits64);
 }
 
 static uint8_t squeeze_log2_of_pow2(uint64_t pow2) {
@@ -314,21 +615,9 @@ static inline void squeeze_encode_pos(squeeze_type* s, const uint16_t pos) {
     if (x > 0) { squeeze_write_bits(s, (pos - b), x); }
 }
 
-// #define SQUEEZE_MAP_STATS // uncomment to print stats
-
 static void squeeze_compress(squeeze_type* s, bitstream* bs,
                              const uint8_t* data, uint64_t bytes,
                              uint16_t window) {
-    #ifdef SQUEEZE_MAP_STATS
-        static double   map_distance_sum;
-        static double   map_len_sum;
-        static uint64_t map_count;
-        map_distance_sum = 0;
-        map_len_sum = 0;
-        map_count = 0;
-        size_t br_bytes = 0; // source bytes encoded as back references
-        size_t li_bytes = 0; // source bytes encoded "as is" literals
-    #endif
     s->bs = bs;
     if (!huffman_insert(&s->lit, squeeze_lit_nyt)) { s->error = EINVAL; }
     if (!huffman_insert(&s->pos, squeeze_pos_nyt)) { s->error = EINVAL; }
@@ -356,56 +645,17 @@ static void squeeze_compress(squeeze_type* s, bitstream* bs,
                 j--;
             }
         }
-        if (s->map.n > 0) {
-            int32_t  best = map_best(&s->map, data + i, bytes - i);
-            uint32_t best_bytes =
-                     best < 0 ? 0 : s->map.entry[best].bytes;
-            uint32_t best_distance = best < 0 ?
-                     0 : (uint32_t)(data + i - s->map.entry[best].data);
-            if (best_distance < 0x7FFF && best_bytes > len && best_bytes > 4) {
-                assert(best_bytes >= squeeze_deflate_len_min);
-                assert(memcmp(data + i - best_distance, data + i, best_bytes) == 0);
-                len = best_bytes;
-                pos = best_distance;
-                #ifdef SQUEEZE_MAP_STATS
-                    map_distance_sum += pos;
-                    map_len_sum += len;
-                    map_count++;
-                #endif
-            }
-        }
         if (len >= squeeze_deflate_len_min) {
             assert(0 < pos && pos <= 0x7FFF);
             squeeze_encode_len(s, (uint16_t)len);
             squeeze_encode_pos(s, (uint16_t)pos);
-            if (s->map.n > 0) {
-                map_put(&s->map, data + i, (uint32_t)len);
-            }
             i += len;
-            #ifdef SQUEEZE_MAP_STATS
-                br_bytes += len;
-            #endif
         } else {
-            #ifdef SQUEEZE_MAP_STATS
-            li_bytes++;
-            #endif
             squeeze_encode_literal(s, data[i]);
             i++;
         }
     }
     squeeze_flush(s);
-    #ifdef SQUEEZE_MAP_STATS
-        double br_percent = (100.0 * br_bytes) / (br_bytes + li_bytes);
-        double li_percent = (100.0 * li_bytes) / (br_bytes + li_bytes);
-        printf("entropy literals: %.2f %.2f%% back references: %.2f %.2f%%\n",
-            huffman_entropy(&s->lit), li_percent,
-            huffman_entropy(&s->pos), br_percent);
-        if (map_count > 0) {
-            printf("avg dic distance: %.1f length: %.1f count: %lld\n",
-                    map_distance_sum / map_count,
-                    map_len_sum / map_count, map_count);
-        }
-    #endif
 }
 
 static inline uint64_t squeeze_read_bit(squeeze_type* s) {
@@ -441,18 +691,9 @@ static inline uint64_t squeeze_read_huffman(squeeze_type* s, huffman_tree* t) {
     return (uint64_t)i;
 }
 
-static void squeeze_read_header(bitstream* bs, uint64_t *bytes,
-                                uint8_t *win_bits) {
+static void squeeze_read_header(bitstream* bs, uint64_t *bytes) {
     uint64_t b = bitstream_read_bits(bs, sizeof(uint64_t) * 8);
-    uint64_t w = bitstream_read_bits(bs, sizeof(uint8_t) * 8);
-    if (bs->error == 0) {
-        if (w < squeeze_min_win_bits || w > squeeze_max_win_bits) {
-            bs->error = EINVAL;
-        } else if (bs->error == 0) {
-            *bytes = b;
-            *win_bits = (uint8_t)w;
-        }
-    }
+    if (bs->error == 0) { *bytes = b; }
 }
 
 static uint16_t squeeze_read_length(squeeze_type* s, uint16_t lit) {
@@ -532,8 +773,8 @@ static void squeeze_decompress(squeeze_type* s, bitstream* bs,
                     if (s->error != 0) { break; }
                     assert(0 < pos && pos <= 0x7FFF);
                     if (0 < pos && pos <= 0x7FFF) {
-                        // Cannot do memcpy() because of overlapped regions.
-                        // memcpy() may read more than one byte at a time.
+                        // memcpy() cannot be used on overlapped regions
+                        // because it may read more than one byte at a time.
                         uint8_t* d = data - (size_t)pos;
                         const size_t n = i + (size_t)len;
                         while (i < n) { data[i] = d[i]; i++; }
@@ -555,17 +796,15 @@ extern "C" { // avoid mangling of global variable "squeeze" by C++ compilers
 #endif
 
 squeeze_interface squeeze = {
-    .alloc        = squeeze_alloc,
-    .init_with    = squeeze_init_with,
+    .init         = squeeze_init,
     .write_header = squeeze_write_header,
     .compress     = squeeze_compress,
     .read_header  = squeeze_read_header,
     .decompress   = squeeze_decompress,
-    .free         = squeeze_free
 };
 
 #if defined(__cplusplus)
 } // extern "C"
 #endif
 
-#endif
+#endif // squeeze_implementation

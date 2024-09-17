@@ -1,35 +1,30 @@
 # Squeeze
 
-LZ77, Huffman dictionary compression
+zip like LZ77 + Huffman + Deflate compression
 
 ### Based on:
 
 https://en.wikipedia.org/wiki/LZ77_and_LZ78
 
-https://en.wikipedia.org/wiki/Huffman_coding
+https://en.wikipedia.org/wiki/Adaptive_Huffman_coding
 
 https://en.wikipedia.org/wiki/Deflate
 
 ### Goals:
 
-* Simplicity. (LoC bitstream.h:127 huffman.h:260 squeeze.h:612 + map.h:134 = 1133)
-* Ease of build and use.
-* Can be amalgamated into single header file library.
+* Simplicity (squeeze.h LoC: ~800).
+* Ease of build and use (C99/C17/C23).
+* Amalgamated into single header file library.
 * No external dependencies.
-* No on the fly memory heap usage (can work with static or externally allocaed object)
+* No memory heap malloc() / free()
+* Minimize name pollution of global namespace in C.
 
 ### No goals:
 
 * Performance (both CPU and memory).
 * Existing archivers compatibility.
-* Stream encoding decoding.
-
-### Test materials:
-
-Because Chinese texts are very compact comparing to e.g. the KJV bible
-the Guttenberg License wording is stripped from the text files.
-
-* See downloads.bat
+* Stream to stream encoding decoding.
+* 16 and 32 bit CPU architectures.
 
 ### Overview:
 
@@ -74,13 +69,15 @@ The `squeeze` interface operates as a custom DEFLATE compression method, primari
 - When encoding a length or position, the compressor first writes the corresponding Huffman code and then appends the extra bits required to fully specify the value.
 - Similarly, during decompression, the decoder reads the Huffman code and any extra bits to reconstruct the full length or position value.
 
-### Dictionary (Optional):
-- The `map` structure is an optional feature for optimizing compression by storing sequences of previously seen data. In the standard `squeeze` workflow, this dictionary is not used, but it can be enabled for experiments.
-  
-- **`map_put`/`map_best`**: These methods add new entries to the dictionary and find the longest matching sequence in the dictionary, respectively.
-
 ### Error Handling:
 - The `error` field in the `squeeze_type` struct is used to track any issues that arise during compression or decompression. If an error occurs (e.g., out of memory, invalid input), the compression/decompression process is halted.
 
 ### Theory of Operation Summary:
 The `squeeze` interface provides an adaptive compression algorithm that dynamically adjusts its Huffman trees based on the input data. It uses LZ77 to find repeating patterns in the data and encodes them efficiently using backreferences. Huffman encoding is used to represent both literal bytes and length/position pairs compactly. By updating the Huffman trees as data is processed, the compressor adapts to the characteristics of the input data, ensuring that commonly occurring symbols are represented with fewer bits.
+
+### Test materials:
+
+Because Chinese texts are very compact comparing to e.g. the KJV bible
+the Guttenberg License wording is stripped from the text files.
+
+* See downloads.bat

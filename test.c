@@ -7,28 +7,13 @@
 #define printf(...)    rt_printf(__VA_ARGS__)
 #define countof(a)     rt_countof(a)
 
-#include "bitstream.h"
 #include "squeeze.h"
 #include "file.h"
 
-// Using hash map dictionary actually makes compression worse.
-// The reason is that the dictionary references introduce "far"
-// relatively large distances and the position encoding for
-// distance that uses small Huffman (31 terminals tree) becomes
-// noisy and a lot of extra bits are written as a result.
-// To make dictionary work, implementation of LZMA like scheme
-// suites better with minimum length 2 instead of 3 and range
-// encoding instead of Huffman:
-// https://en.wikipedia.org/wiki/Range_coding
-
-// #define SQUEEZE_MAP_EXPERIMENT
-
 #ifdef SQUEEZE_MAX_WINDOW // maximum 32K window
-enum { bits_win = 15, bits_map = 0 }; // ~1GB total memory
-#elif defined(SQUEEZE_MAP_EXPERIMENT)
-enum { bits_win = 11, bits_map = 25 }; // ~1GB total memory
+enum { bits_win = 15 };
 #else
-enum { bits_win = 10, bits_map = 0 }; // do not use map
+enum { bits_win = 10 };
 #endif
 
 // bits_win = 15:
@@ -49,48 +34,37 @@ static errno_t compress(const char* from, const char* to,
         printf("Failed to create \"%s\": %s\n", to, strerror(r));
         return r;
     }
-    squeeze_type* s = null;
+    squeeze_type s = {0};
+    squeeze.init(&s);
     bitstream bs = { .stream = out, .output = write_file };
-    squeeze.write_header(&bs, bytes, bits_win);
+    squeeze.write_header(&bs, bytes);
     if (bs.error != 0) {
         r = bs.error;
         printf("Failed to create \"%s\": %s\n", to, strerror(r));
     } else {
-        s = squeeze.alloc(bits_map);
-        if (s != null) {
-            squeeze.compress(s, &bs, data, bytes, 1u << bits_win);
-            assert(s->error == 0);
-        } else {
-            r = ENOMEM;
-            printf("squeeze_new() failed.\n");
-            assert(false);
-        }
+        squeeze.compress(&s, &bs, data, bytes, 1u << bits_win);
+        assert(s.error == 0);
     }
     errno_t rc = fclose(out) == 0 ? 0 : errno; // error writing buffered output
     if (rc != 0) {
         printf("Failed to flush on file close: %s\n", strerror(rc));
         if (r == 0) { r = rc; }
     }
-    if (r == 0) {
-        r = s->error;
-        if (r != 0) {
-            printf("Failed to compress: %s\n", strerror(r));
+    if (r == 0) { r = s.error; }
+    if (r != 0) {
+        printf("Failed to compress: %s\n", strerror(r));
+    } else {
+        char* fn = from == null ? null : strrchr(from, '\\'); // basename
+        if (fn == null) { fn = from == null ? null : strrchr(from, '/'); }
+        if (fn != null) { fn++; } else { fn = (char*)from; }
+        const uint64_t written = s.bs->bytes;
+        double percent = written * 100.0 / bytes;
+        if (from != null) {
+            printf("%7lld -> %7lld %5.1f%% of \"%s\"\n", bytes, written,
+                                                            percent, fn);
         } else {
-            char* fn = from == null ? null : strrchr(from, '\\'); // basename
-            if (fn == null) { fn = from == null ? null : strrchr(from, '/'); }
-            if (fn != null) { fn++; } else { fn = (char*)from; }
-            const uint64_t written = s->bs->bytes;
-            double percent = written * 100.0 / bytes;
-            if (from != null) {
-                printf("%7lld -> %7lld %5.1f%% of \"%s\"\n", bytes, written,
-                                                             percent, fn);
-            } else {
-                printf("%7lld -> %7lld %5.1f%%\n", bytes, written, percent);
-            }
+            printf("%7lld -> %7lld %5.1f%%\n", bytes, written, percent);
         }
-    }
-    if (s != null) {
-        squeeze.free(s); s = null;
     }
     return r;
 }
@@ -109,53 +83,46 @@ static errno_t verify(const char* fn, const uint8_t* input, size_t size) {
     }
     bitstream bs = { .stream = in, .input = read_file };
     uint64_t bytes = 0;
-    uint8_t win_bits = 0;
     if (r == 0) {
-        squeeze.read_header(&bs, &bytes, &win_bits);
+        squeeze.read_header(&bs, &bytes);
         if (bs.error != 0) {
             printf("Failed to read header from \"%s\"\n", fn);
             r = bs.error;
         }
     }
     if (r == 0) {
-        squeeze_type* s = squeeze.alloc(0);
-        if (s == null) {
-            r = ENOMEM;
-            printf("squeeze_new() failed.\n");
-            assert(false);
-        } else {
-            assert(s->error == 0 && bytes == size);
-            uint8_t* data = (uint8_t*)calloc(1, (size_t)bytes);
-            if (data == null) {
-                printf("Failed to allocate memory for decompressed data\n");
-                fclose(in);
-                return ENOMEM;
-            }
-            squeeze.decompress(s, &bs, data, bytes);
+        squeeze_type s = {0};
+        squeeze.init(&s);
+        assert(bytes == size);
+        uint8_t* data = (uint8_t*)calloc(1, (size_t)bytes);
+        if (data == null) {
+            printf("Failed to allocate memory for decompressed data\n");
             fclose(in);
-            assert(s->error == 0);
-            if (s->error == 0) {
-                const bool same = size == bytes && memcmp(input, data, bytes) == 0;
-                if (!same) {
-                    int64_t k = -1;
-                    for (size_t i = 0; i < rt_min(bytes, size) && k < 0; i++) {
-                        if (input[i] != data[i]) { k = (int64_t)i; }
-                    }
-                    printf("compress() and decompress() are not the same @%lld\n", k);
-                    // ENODATA is not original posix error but is OpenGroup error
-                    r = ENODATA; // or EIO
-                } else if (bytes < 128) {
-//                  printf("decompressed: %.*s\n", (unsigned int)bytes, data);
+            return ENOMEM;
+        }
+        squeeze.decompress(&s, &bs, data, bytes);
+        fclose(in);
+        assert(s.error == 0);
+        if (s.error == 0) {
+            const bool same = size == bytes && memcmp(input, data, bytes) == 0;
+            if (!same) {
+                int64_t k = -1;
+                for (size_t i = 0; i < rt_min(bytes, size) && k < 0; i++) {
+                    if (input[i] != data[i]) { k = (int64_t)i; }
                 }
-                assert(same);
-            } else {
-                r = s->error;
+                printf("compress() and decompress() are not the same @%lld\n", k);
+                // ENODATA is not original posix error but is OpenGroup error
+                r = ENODATA; // or EIO
+            } else if (bytes < 128) {
+//              printf("decompressed: %.*s\n", (unsigned int)bytes, data);
             }
-            free(data);
-            if (r != 0) {
-                printf("Failed to decompress\n");
-            }
-            squeeze.free(s); s = null;
+            assert(same);
+        } else {
+            r = s.error;
+        }
+        free(data);
+        if (r != 0) {
+            printf("Failed to decompress\n");
         }
     }
     return r;
