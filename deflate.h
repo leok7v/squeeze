@@ -5,7 +5,11 @@
 
 enum {
     deflate_len_count = 285 + 1,
-    deflate_pos_count = 32768 + 1
+    deflate_pos_count = 32768 + 1,
+    deflate_len_min = 3,
+    deflate_len_max = 257,
+    deflate_sym_max = 284, // maximum literal for length base
+    deflate_pos_max = 29   // maximum pos base index
 };
 
 static uint8_t deflate_len_index[deflate_len_count]; // index of deflate_len_base

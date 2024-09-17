@@ -2,13 +2,17 @@
 #define squeeze_header_included
 
 #include "bitstream.h"
+#include "deflate.h"
 #include "huffman.h"
+#include "map.h"
 
-enum {
+enum { // "nyt" stands for Not Yet Transmitted (see Vitter Algorithm)
     squeeze_min_win_bits  =  10,
     squeeze_max_win_bits  =  15,
-    squeeze_lit_nyt       = 286, // Not Yet Transmitted (see Vitter Algorithm)
-    squeeze_pos_nyt       =  31  // Not Yet Transmitted
+    squeeze_min_map_bits  =  16,
+    squeeze_max_map_bits  =  28,
+    squeeze_lit_nyt       =  deflate_sym_max + 1,
+    squeeze_pos_nyt       =  deflate_pos_max + 1,
 };
 
 typedef struct {
@@ -17,6 +21,8 @@ typedef struct {
     huffman_tree_type  pos; // positions tree of 1^win_bits
     huffman_node_type* lit_nodes; // 512 * 2 - 1
     huffman_node_type* pos_nodes; //  32 * 2 - 1 
+    map_type           map;
+    map_entry_type*    map_entry;
     bitstream_type*    bs;
 } squeeze_type;
 
@@ -25,56 +31,39 @@ typedef struct {
     0 : (size_t)((uint64_t)sizeof(name) * (uint64_t)(count))           \
 )
 
-#define squeeze_size_implementation(win_bits) (                        \
+#define squeeze_size_implementation(map_bits) (                        \
     (sizeof(squeeze_type)) +                                           \
     /* lit_nodes: */                                                   \
-    squeeze_size_mul(huffman_node_type, (512ULL * 2ULL - 1ULL)) +      \
+    squeeze_size_mul(huffman_node_type, (512uLL * 2ULL - 1ULL)) +      \
     /* pos_nodes: */                                                   \
-    squeeze_size_mul(huffman_node_type, ((1ULL << 5) * 2ULL - 1ULL))   \
+    squeeze_size_mul(huffman_node_type, ((1uLL << 5) * 2ULL - 1ULL)) + \
+    /* pos_nodes: */                                                   \
+    squeeze_size_mul(map_entry_type, (1uLL << (map_bits)))             \
 )
 
-#define squeeze_sizeof(win_bits) (                                     \
+#define squeeze_sizeof(win_bits, map_bits) (                           \
     (sizeof(size_t) == sizeof(uint64_t)) &&                            \
     (squeeze_min_win_bits <= (win_bits)) &&                            \
                              ((win_bits) <= squeeze_max_win_bits) ?    \
-    (size_t)squeeze_size_implementation((win_bits)) : 0                \
+    (size_t)squeeze_size_implementation((map_bits)) : 0                \
 )
 
 typedef struct {
+    squeeze_type* (*alloc)(bitstream_type* bs, uint8_t win_bits,
+                           uint8_t map_bits);
     errno_t (*init_with)(squeeze_type* s, void* memory, size_t size,
-                         uint8_t win_bits);
+                         uint8_t win_bits, uint8_t map_bits);
     // `win_bits` is a log2 of window size in bytes in range
     // [squeeze_min_win_bits..squeeze_max_win_bits]
     void (*write_header)(bitstream_type* bs, uint64_t bytes, uint8_t win_bits);
     void (*compress)(squeeze_type* s, const uint8_t* data, size_t bytes, 
                      uint16_t window);
     void (*read_header)(bitstream_type* bs, uint64_t *bytes, uint8_t *win_bits);
-    void (*decompress)(squeeze_type* s, uint8_t* data, size_t bytes,
-                       uint16_t window);
+    void (*decompress)(squeeze_type* s, uint8_t* data, size_t bytes);
+    void (*free)(squeeze_type* s);
 } squeeze_interface;
 
 extern squeeze_interface squeeze;
-
-#if 0
-
-// TODO: consider inclusion of these two functions for convenience:
-
-static squeeze_type* squeeze_new(bitstream_type* bs, uint8_t win_bits,
-                                 uint8_t map_bits, uint8_t len_bits) {
-    const uint64_t bytes = squeeze_sizeof(win_bits, map_bits, len_bits);
-    squeeze_type* s = (squeeze_type*)calloc(1, (size_t)bytes);
-    if (s != null) {
-        squeeze_init_with(s, s, bytes, win_bits, map_bits, len_bits);
-        s->bs = bs;
-    }
-    return s;
-}
-
-static void squeeze_delete(squeeze_type* s) {
-    free(s);
-}
-
-#endif
 
 #endif // squeeze_header_included
 
@@ -88,8 +77,6 @@ static void squeeze_delete(squeeze_type* s) {
 #define huffman_implementation
 #include "huffman.h"
 
-#include "deflate.h"
-
 #ifndef null
 #define null ((void*)0) // like null_ptr better than NULL (0)
 #endif
@@ -102,11 +89,28 @@ static void squeeze_delete(squeeze_type* s) {
 #include <assert.h>
 #endif
 
+static squeeze_type* squeeze_alloc(bitstream_type* bs, uint8_t win_bits,
+                                   uint8_t map_bits) {
+    const uint64_t bytes = squeeze_sizeof(win_bits, map_bits);
+    squeeze_type* s = (squeeze_type*)calloc(1, (size_t)bytes);
+    if (s != null) {
+        squeeze.init_with(s, s, bytes, win_bits, map_bits);
+        s->bs = bs;
+    }
+    return s;
+}
+
+static void squeeze_free(squeeze_type* s) {
+    free(s);
+}
+
 static errno_t squeeze_init_with(squeeze_type* s, void* memory, size_t size,
-                                 uint8_t win_bits) {
+                                 uint8_t win_bits, uint8_t map_bits) {
     errno_t r = 0;
     assert(squeeze_min_win_bits <= win_bits && win_bits <= squeeze_max_win_bits);
-    size_t expected = squeeze_sizeof(win_bits);
+    assert(map_bits == 0 ||
+           squeeze_min_map_bits <= map_bits && map_bits <= squeeze_max_map_bits);
+    size_t expected = squeeze_sizeof(win_bits, map_bits);
     // 167,936,192 bytes for (win_bits = 11, map_bits = 19)
     assert(size == expected);
     if (expected == 0 || memory == null || size != expected) {
@@ -117,13 +121,20 @@ static errno_t squeeze_init_with(squeeze_type* s, void* memory, size_t size,
         p += sizeof(squeeze_type);
         const size_t lit_n = 512; // literals in range [0..286] always 512
         const size_t pos_n = 32;
+        const size_t map_n = 1uLL << map_bits;
         const size_t lit_m = lit_n * 2 - 1;
         const size_t pos_m = pos_n * 2 - 1;
         s->lit_nodes = (huffman_node_type*)p; p += sizeof(huffman_node_type) * lit_m;
         s->pos_nodes = (huffman_node_type*)p; p += sizeof(huffman_node_type) * pos_m;
+        s->map_entry = (map_entry_type*)p;    p += sizeof(map_entry_type)    * map_n;
         assert(p == (uint8_t*)memory + size);
         huffman_init(&s->lit, s->lit_nodes, lit_m);
         huffman_init(&s->pos, s->pos_nodes, pos_m);
+        if (map_bits != 0) {
+            map_init(&s->map, s->map_entry, map_n);
+        } else { // map is not used in decompress
+            memset(&s->map, 0x00, sizeof(s->map));
+        }
     }
     return r;
 }
@@ -214,7 +225,7 @@ static inline void squeeze_encode_len(squeeze_type* s, const uint16_t len) {
 }
 
 static inline void squeeze_encode_pos(squeeze_type* s, const uint16_t pos) {
-    assert(0 <= pos && pos <= 0xFFFF);
+    assert(0 <= pos && pos <= 0x7FFF);
     uint8_t  i = deflate_pos_index[pos];
     uint16_t b = deflate_pos_base[i];
     uint8_t  x = deflate_pos_extra_bits[i];
@@ -230,11 +241,20 @@ static inline void squeeze_encode_pos(squeeze_type* s, const uint16_t pos) {
     if (x > 0) { squeeze_write_bits(s, (pos - b), x); }
 }
 
+// #define SQUEEZE_MAP_STATS // uncomment to print stats
+
 static void squeeze_compress(squeeze_type* s, const uint8_t* data, uint64_t bytes, 
                              uint16_t window) {
-    enum { deflate_max_len = 255 };
-    size_t pl_bytes = 0;
-    size_t as_bytes = 0;
+    #ifdef SQUEEZE_MAP_STATS
+        static double   map_distance_sum;
+        static double   map_len_sum;
+        static uint64_t map_count;
+        map_distance_sum = 0;
+        map_len_sum = 0;
+        map_count = 0;
+        size_t br_bytes = 0; // source bytes encoded as back references
+        size_t li_bytes = 0; // source bytes encoded "as is" literals
+    #endif
     huffman_insert(&s->lit, squeeze_lit_nyt);
     huffman_insert(&s->pos, squeeze_pos_nyt);
     deflate_init();
@@ -244,42 +264,73 @@ static void squeeze_compress(squeeze_type* s, const uint8_t* data, uint64_t byte
         size_t pos = 0;
         if (i >= 1) {
             size_t j = i - 1;
-            size_t min_j = i > window ? i - window : 0;
-            while (j > min_j) {
+            size_t min_j = i >= window ? i - window + 1 : 0;
+            for (;;) {
                 assert((i - j) < window);
                 const size_t n = bytes - i;
                 size_t k = 0;
-                while (k < n && data[j + k] == data[i + k] && k < deflate_max_len) {
+                while (k < n && data[j + k] == data[i + k] && k < deflate_len_max) {
                     k++;
                 }
-                if (k > len) {
+                if (k >= deflate_len_min && k > len) {
                     len = k;
                     pos = i - j;
-                    if (len == deflate_max_len) { break; }
+                    if (len == deflate_len_max) { break; }
                 }
+                if (j == min_j) { break; }
                 j--;
             }
         }
-        if (len >= 3) {
-            assert(0 < pos && pos < window);
+        if (s->map.n > 0) {
+            int32_t  best = map_best(&s->map, data + i, bytes - i);
+            uint32_t best_bytes = 
+                     best < 0 ? 0 : s->map.entry[best].bytes;
+            uint32_t best_distance = best < 0 ? 
+                     0 : (uint32_t)(data + i - s->map.entry[best].data);
+            if (best_distance < 0x7FFF && best_bytes > len && best_bytes > 4) {
+                assert(best_bytes >= deflate_len_min);
+                assert(memcmp(data + i - best_distance, data + i, best_bytes) == 0);
+                len = best_bytes;
+                pos = best_distance;
+                #ifdef SQUEEZE_MAP_STATS
+                    map_distance_sum += pos;
+                    map_len_sum += len;
+                    map_count++;
+                #endif
+            }
+        }
+        if (len >= deflate_len_min) {
+            assert(0 < pos && pos <= 0x7FFF);
             squeeze_encode_len(s, (uint16_t)len);
             squeeze_encode_pos(s, (uint16_t)pos);
+            if (s->map.n > 0) {
+                map_put(&s->map, data + i, (uint32_t)len);
+            }
             i += len;
-            pl_bytes += len;
+            #ifdef SQUEEZE_MAP_STATS
+                br_bytes += len;
+            #endif
         } else {
-            as_bytes++;
+            #ifdef SQUEEZE_MAP_STATS
+            li_bytes++;
+            #endif
             squeeze_encode_literal(s, data[i]);
             i++;
         }
     }
     squeeze_flush(s);
-#if 0
-    double pl_percent = (100.0 * pl_bytes) / (pl_bytes + as_bytes);
-    double as_percent = (100.0 * as_bytes) / (pl_bytes + as_bytes);
-    printf("lit: %.2f%% back references: %.2f%% \n", as_percent, pl_percent);
-    printf("entropy: lit: %.2f pos: %.2f\n",
-        huffman_entropy(&s->lit), huffman_entropy(&s->pos));
-#endif
+    #ifdef SQUEEZE_MAP_STATS
+        double br_percent = (100.0 * br_bytes) / (br_bytes + li_bytes);
+        double li_percent = (100.0 * li_bytes) / (br_bytes + li_bytes);
+        printf("entropy literals: %.2f %.2f%% back references: %.2f %.2f%%\n",
+            huffman_entropy(&s->lit), li_percent,
+            huffman_entropy(&s->pos), br_percent);
+        if (map_count > 0) {
+            printf("avg dic distance: %.1f length: %.1f count: %lld\n", 
+                    map_distance_sum / map_count,
+                    map_len_sum / map_count, map_count);
+        }
+    #endif
 }
 
 static inline uint64_t squeeze_read_bit(squeeze_type* s) {
@@ -373,8 +424,7 @@ static uint32_t squeeze_read_pos(squeeze_type* s) {
     return pos;
 }
 
-static void squeeze_decompress(squeeze_type* s, uint8_t* data, uint64_t bytes,
-                               uint16_t window) {
+static void squeeze_decompress(squeeze_type* s, uint8_t* data, uint64_t bytes) {
     huffman_insert(&s->lit, squeeze_lit_nyt);
     huffman_insert(&s->pos, squeeze_pos_nyt);
     deflate_init();
@@ -396,17 +446,15 @@ static void squeeze_decompress(squeeze_type* s, uint8_t* data, uint64_t bytes,
             i++;
         } else {
             assert(257 <= lit && lit < squeeze_lit_nyt);
-            if (257 <= lit && lit < squeeze_lit_nyt) {
+            if (257 <= lit && lit <= squeeze_lit_nyt) {
                 uint32_t len = squeeze_read_length(s, (uint16_t)lit);
                 if (s->error != 0) { break; }
-                assert(3 <= len && len < deflate_len_count); 
-                if (len < 3 || len >= deflate_len_count) { 
-                    s->error = EINVAL; 
-                } else {
+                assert(deflate_len_min <= len && len <= deflate_len_max); 
+                if (deflate_len_min <= len && len <= deflate_len_max) { 
                     uint32_t pos = squeeze_read_pos(s);
                     if (s->error != 0) { break; }
-                    assert(0 < pos && pos < window);
-                    if (0 < pos && pos < window) {
+                    assert(0 < pos && pos <= 0x7FFF);
+                    if (0 < pos && pos <= 0x7FFF) {
                         // Cannot do memcpy() because of overlapped regions.
                         // memcpy() may read more than one byte at a time.
                         uint8_t* d = data - (size_t)pos;
@@ -415,6 +463,8 @@ static void squeeze_decompress(squeeze_type* s, uint8_t* data, uint64_t bytes,
                     } else {
                         s->error = EINVAL;
                     }
+                } else {
+                    s->error = EINVAL; 
                 }
             } else {
                 s->error = EINVAL;
@@ -424,11 +474,13 @@ static void squeeze_decompress(squeeze_type* s, uint8_t* data, uint64_t bytes,
 }
 
 squeeze_interface squeeze = {
+    .alloc        = squeeze_alloc,
     .init_with    = squeeze_init_with,
     .write_header = squeeze_write_header,
     .compress     = squeeze_compress,
     .read_header  = squeeze_read_header,
     .decompress   = squeeze_decompress,
+    .free         = squeeze_free
 };
 
 #endif // squeeze_implementation

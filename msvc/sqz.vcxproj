@@ -24,6 +24,7 @@
     <ClInclude Include="..\deflate.h" />
     <ClInclude Include="..\file.h" />
     <ClInclude Include="..\huffman.h" />
+    <ClInclude Include="..\map.h" />
     <ClInclude Include="..\rt_generics.h" />
     <ClInclude Include="..\squeeze.h" />
   </ItemGroup>
@@ -150,6 +151,10 @@
       <AdditionalOptions>/std:clatest %(AdditionalOptions)</AdditionalOptions>
       <debugInformationFormat>OldStyle</debugInformationFormat>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions</EnableEnhancedInstructionSet>
+      <ExceptionHandling>false</ExceptionHandling>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -200,6 +205,9 @@
       <AdditionalOptions>/std:clatest %(AdditionalOptions)</AdditionalOptions>
       <debugInformationFormat>OldStyle</debugInformationFormat>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <ExceptionHandling>false</ExceptionHandling>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

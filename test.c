@@ -11,30 +11,30 @@
 #include "squeeze.h"
 #include "file.h"
 
-#ifndef SQUEEZE_MAX
-enum { bits_win = 11 };
+// Using hash map dictionary actually makes compression worse.
+// The reason is that the dictionary references introducse "far"
+// relatively large distances and the position encoding for 
+// distance that uses small Huffman (31 terminals tree) becomes
+// noisy and a lot of extra bits are written as a result.
+// To make dictionary work, implementation of LZMA like scheme
+// suites better with minimum length 2 instead of 3 and range
+// encoding instead of Huffman:
+// https://en.wikipedia.org/wiki/Range_coding
+
+// #define SQUEEZE_MAP_EXPERIMENT
+
+#ifdef SQUEEZE_MAX_WINDOW // maximum 32K window
+enum { bits_win = 15, bits_map = 0 }; // ~1GB total memory
+#elif defined(SQUEEZE_MAP_EXPERIMENT)
+enum { bits_win = 11, bits_map = 25 }; // ~1GB total memory
 #else
-enum { bits_win = 15 };
+enum { bits_win = 10, bits_map = 0 }; // do not use map
 #endif
 
 // bits_win = 15:
 // 4436173 -> 1451352 32.7% of "bible.txt"
 // zip: (MS Windows)
 // 4436173 -> 1398871 31.5% of "bible.txt"
-
-static squeeze_type* squeeze_new(bitstream_type* bs, uint8_t win_bits) {
-    const uint64_t bytes = squeeze_sizeof(win_bits);
-    squeeze_type* s = (squeeze_type*)calloc(1, (size_t)bytes);
-    if (s != null) {
-        squeeze.init_with(s, s, bytes, win_bits);
-        s->bs = bs;
-    }
-    return s;
-}
-
-static void squeeze_delete(squeeze_type* s) {
-    free(s);
-}
 
 static errno_t compress(const char* from, const char* to,
                         const uint8_t* data, uint64_t bytes) {
@@ -51,7 +51,7 @@ static errno_t compress(const char* from, const char* to,
         r = bs.error;
         printf("Failed to create \"%s\": %s\n", to, strerror(r));
     } else {
-        s = squeeze_new(&bs, bits_win);
+        s = squeeze.alloc(&bs, bits_win, bits_map);
         if (s != null) {
             squeeze.compress(s, data, bytes, 1u << bits_win);
             assert(s->error == 0);
@@ -85,7 +85,7 @@ static errno_t compress(const char* from, const char* to,
         }
     }
     if (s != null) {
-        squeeze_delete(s); s = null;
+        squeeze.free(s); s = null;
     }
     return r;
 }
@@ -108,38 +108,44 @@ static errno_t verify(const char* fn, const uint8_t* input, size_t size) {
         }
     }
     if (r == 0) {
-        squeeze_type* s = squeeze_new(&bs, win_bits);
+        squeeze_type* s = squeeze.alloc(&bs, win_bits, 0);
         if (s == null) {
             r = ENOMEM;
             printf("squeeze_new() failed.\n");
             assert(false);
         } else {
-            assert(s->error == 0 && bytes == size && win_bits == win_bits);
+            assert(s->error == 0 && bytes == size);
             uint8_t* data = (uint8_t*)calloc(1, (size_t)bytes);
             if (data == null) {
                 printf("Failed to allocate memory for decompressed data\n");
                 fclose(in);
                 return ENOMEM;
             }
-            squeeze.decompress(s, data, bytes, 1 << win_bits);
+            squeeze.decompress(s, data, bytes);
             fclose(in);
             assert(s->error == 0);
             if (s->error == 0) {
                 const bool same = size == bytes && memcmp(input, data, bytes) == 0;
-                assert(same);
                 if (!same) {
-                    printf("compress() and decompress() are not the same\n");
+                    int64_t k = -1;
+                    for (size_t i = 0; i < rt_min(bytes, size) && k < 0; i++) {
+                        if (input[i] != data[i]) { k = (int64_t)i; }
+                    }
+                    printf("compress() and decompress() are not the same @%lld\n", k);
                     // ENODATA is not original posix error but is OpenGroup error
                     r = ENODATA; // or EIO
                 } else if (bytes < 128) {
                     printf("decompressed: %.*s\n", (unsigned int)bytes, data);
                 }
+                assert(same);
+            } else {
+                r = s->error;
             }
             free(data);
             if (r != 0) {
                 printf("Failed to decompress\n");
             }
-            squeeze_delete(s); s = null;
+            squeeze.free(s); s = null;
         }
     }
     return r;
