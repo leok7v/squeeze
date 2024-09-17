@@ -2,17 +2,79 @@
 #define squeeze_header_included
 
 #include "bitstream.h"
-#include "deflate.h"
 #include "huffman.h"
 #include "map.h"
+
+enum {
+    squeeze_deflate_sym_min   = 257, // minimum literal for length base
+    squeeze_deflate_sym_max   = 284, // maximum literal for length base
+    squeeze_deflate_pos_max   = 29,   // maximum pos base index
+    squeeze_deflate_len_min   = 3,
+    // value is the same but unrelated to squeeze_deflate_sym_min:
+    squeeze_deflate_len_max   = 257
+};
 
 enum { // "nyt" stands for Not Yet Transmitted (see Vitter Algorithm)
     squeeze_min_win_bits  =  10,
     squeeze_max_win_bits  =  15,
     squeeze_min_map_bits  =  16,
     squeeze_max_map_bits  =  28,
-    squeeze_lit_nyt       =  deflate_sym_max + 1,
-    squeeze_pos_nyt       =  deflate_pos_max + 1,
+    squeeze_lit_nyt       =  squeeze_deflate_sym_max + 1,
+    squeeze_pos_nyt       =  squeeze_deflate_pos_max + 1,
+};
+
+// deflate tables
+
+static const uint16_t squeeze_len_base[29] = {
+    3, 4, 5, 6, 7, 8, 9, 10,  // 257-264
+    11, 13, 15, 17,           // 265-268
+    19, 23, 27, 31,           // 269-272
+    35, 43, 51, 59,           // 273-276
+    67, 83, 99, 115,          // 277-280
+    131, 163, 195, 227, 258   // 281-285
+};
+
+static const uint8_t squeeze_len_xb[29] = { // extra bits
+    0, 0, 0, 0, 0, 0, 0, 0,   // 257-264
+    1, 1, 1, 1,               // 265-268
+    2, 2, 2, 2,               // 269-272
+    3, 3, 3, 3,               // 273-276
+    4, 4, 4, 4,               // 277-280
+    5, 5, 5, 5, 0             // 281-285 (len = 258 has no extra bits)
+};
+
+static const uint16_t squeeze_pos_base[30] = {
+    1, 2, 3, 4,               // 0-3
+    5, 7,                     // 4-5
+    9, 13,                    // 6-7
+    17, 25,                   // 8-9
+    33, 49,                   // 10-11
+    65, 97,                   // 12-13
+    129, 193,                 // 14-15
+    257, 385,                 // 16-17
+    513, 769,                 // 18-19
+    1025, 1537,               // 20-21
+    2049, 3073,               // 22-23
+    4097, 6145,               // 24-25
+    8193, 12289,              // 26-27
+    16385, 24577              // 28-29
+};
+
+static const uint8_t squeeze_pos_xb[30] = { // extra bits
+    0, 0, 0, 0,               // 0-3
+    1, 1,                     // 4-5
+    2, 2,                     // 6-7
+    3, 3,                     // 8-9
+    4, 4,                     // 10-11
+    5, 5,                     // 12-13
+    6, 6,                     // 14-15
+    7, 7,                     // 16-17
+    8, 8,                     // 18-19
+    9, 9,                     // 20-21
+    10, 10,                   // 22-23
+    11, 11,                   // 24-25
+    12, 12,                   // 26-27
+    13, 13                    // 28-29
 };
 
 typedef struct {
@@ -20,10 +82,12 @@ typedef struct {
     huffman_tree_type  lit; // 0..255 literal bytes; 257-285 length
     huffman_tree_type  pos; // positions tree of 1^win_bits
     huffman_node_type* lit_nodes; // 512 * 2 - 1
-    huffman_node_type* pos_nodes; //  32 * 2 - 1 
+    huffman_node_type* pos_nodes; //  32 * 2 - 1
     map_type           map;
     map_entry_type*    map_entry;
     bitstream_type*    bs;
+    uint8_t len_index[squeeze_deflate_sym_max + 1]; // index of squeeze_len_base
+    uint8_t pos_index[1u << 15];                    // index of squeeze_pos_base
 } squeeze_type;
 
 #define squeeze_size_mul(name, count) (                                \
@@ -56,7 +120,7 @@ typedef struct {
     // `win_bits` is a log2 of window size in bytes in range
     // [squeeze_min_win_bits..squeeze_max_win_bits]
     void (*write_header)(bitstream_type* bs, uint64_t bytes, uint8_t win_bits);
-    void (*compress)(squeeze_type* s, const uint8_t* data, size_t bytes, 
+    void (*compress)(squeeze_type* s, const uint8_t* data, size_t bytes,
                      uint16_t window);
     void (*read_header)(bitstream_type* bs, uint64_t *bytes, uint8_t *win_bits);
     void (*decompress)(squeeze_type* s, uint8_t* data, size_t bytes);
@@ -88,6 +152,29 @@ extern squeeze_interface squeeze;
 #ifndef assert
 #include <assert.h>
 #endif
+
+static void squeeze_deflate_init(squeeze_type* s) {
+    uint8_t  j = 0;
+    uint16_t n = squeeze_len_base[j] + (1u << squeeze_len_xb[j]);
+    for (int16_t i = 3; i < countof(s->len_index); i++) {
+        if (i == n) {
+            j++;
+            n = squeeze_len_base[j] + (1u << squeeze_len_xb[j]);
+        }
+        s->len_index[i] = j;
+    }
+    assert(j == countof(squeeze_len_base) - 1);
+    j = 0;
+    n = squeeze_pos_base[j] + (1u << squeeze_pos_xb[j]);
+    for (int32_t i = 0; i < countof(s->pos_index); i++) {
+        if (i == n) {
+            j++;
+            n = squeeze_pos_base[j] + (1u << squeeze_pos_xb[j]);
+        }
+        s->pos_index[i] = j;
+    }
+    assert(j == countof(squeeze_pos_base) - 1);
+}
 
 static squeeze_type* squeeze_alloc(bitstream_type* bs, uint8_t win_bits,
                                    uint8_t map_bits) {
@@ -203,7 +290,7 @@ static uint8_t squeeze_log2_of_pow2(uint64_t pow2) {
 }
 
 static inline void squeeze_encode_literal(squeeze_type* s, const uint16_t lit) {
-    assert(0 <= lit && lit <= 285);
+    assert(0 <= lit && lit <= squeeze_deflate_sym_max);
     if (s->lit.node[lit].bits == 0) {
         assert(s->lit.node[squeeze_lit_nyt].bits != 0);
         squeeze_write_huffman(s, &s->lit, squeeze_lit_nyt);
@@ -215,20 +302,20 @@ static inline void squeeze_encode_literal(squeeze_type* s, const uint16_t lit) {
 }
 
 static inline void squeeze_encode_len(squeeze_type* s, const uint16_t len) {
-    assert(3 <= len && len < deflate_len_count);
-    uint8_t  i = deflate_len_index[len];
-    uint16_t b = deflate_len_base[i];
-    uint8_t  x = deflate_len_extra_bits[i];
-    squeeze_encode_literal(s, (uint16_t)(257 + i));
+    assert(3 <= len && len < sizeof(s->len_index));
+    uint8_t  i = s->len_index[len];
+    uint16_t b = squeeze_len_base[i];
+    uint8_t  x = squeeze_len_xb[i];
+    squeeze_encode_literal(s, (uint16_t)(squeeze_deflate_sym_min + i));
     assert(b <= len && len - b <= (uint16_t)(1u << x));
     if (x > 0) { squeeze_write_bits(s, (len - b), x); }
 }
 
 static inline void squeeze_encode_pos(squeeze_type* s, const uint16_t pos) {
     assert(0 <= pos && pos <= 0x7FFF);
-    uint8_t  i = deflate_pos_index[pos];
-    uint16_t b = deflate_pos_base[i];
-    uint8_t  x = deflate_pos_extra_bits[i];
+    uint8_t  i = s->pos_index[pos];
+    uint16_t b = squeeze_pos_base[i];
+    uint8_t  x = squeeze_pos_xb[i];
     if (s->pos.node[i].bits == 0) {
         assert(s->pos.node[squeeze_pos_nyt].bits != 0);
         squeeze_write_huffman(s, &s->pos, squeeze_pos_nyt);
@@ -243,7 +330,7 @@ static inline void squeeze_encode_pos(squeeze_type* s, const uint16_t pos) {
 
 // #define SQUEEZE_MAP_STATS // uncomment to print stats
 
-static void squeeze_compress(squeeze_type* s, const uint8_t* data, uint64_t bytes, 
+static void squeeze_compress(squeeze_type* s, const uint8_t* data, uint64_t bytes,
                              uint16_t window) {
     #ifdef SQUEEZE_MAP_STATS
         static double   map_distance_sum;
@@ -255,9 +342,9 @@ static void squeeze_compress(squeeze_type* s, const uint8_t* data, uint64_t byte
         size_t br_bytes = 0; // source bytes encoded as back references
         size_t li_bytes = 0; // source bytes encoded "as is" literals
     #endif
-    huffman_insert(&s->lit, squeeze_lit_nyt);
-    huffman_insert(&s->pos, squeeze_pos_nyt);
-    deflate_init();
+    if (!huffman_insert(&s->lit, squeeze_lit_nyt)) { s->error = EINVAL; }
+    if (!huffman_insert(&s->pos, squeeze_pos_nyt)) { s->error = EINVAL; }
+    squeeze_deflate_init(s);
     size_t i = 0;
     while (i < bytes && s->error == 0) {
         size_t len = 0;
@@ -269,13 +356,13 @@ static void squeeze_compress(squeeze_type* s, const uint8_t* data, uint64_t byte
                 assert((i - j) < window);
                 const size_t n = bytes - i;
                 size_t k = 0;
-                while (k < n && data[j + k] == data[i + k] && k < deflate_len_max) {
+                while (k < n && data[j + k] == data[i + k] && k < squeeze_deflate_len_max) {
                     k++;
                 }
-                if (k >= deflate_len_min && k > len) {
+                if (k >= squeeze_deflate_len_min && k > len) {
                     len = k;
                     pos = i - j;
-                    if (len == deflate_len_max) { break; }
+                    if (len == squeeze_deflate_len_max) { break; }
                 }
                 if (j == min_j) { break; }
                 j--;
@@ -283,12 +370,12 @@ static void squeeze_compress(squeeze_type* s, const uint8_t* data, uint64_t byte
         }
         if (s->map.n > 0) {
             int32_t  best = map_best(&s->map, data + i, bytes - i);
-            uint32_t best_bytes = 
+            uint32_t best_bytes =
                      best < 0 ? 0 : s->map.entry[best].bytes;
-            uint32_t best_distance = best < 0 ? 
+            uint32_t best_distance = best < 0 ?
                      0 : (uint32_t)(data + i - s->map.entry[best].data);
             if (best_distance < 0x7FFF && best_bytes > len && best_bytes > 4) {
-                assert(best_bytes >= deflate_len_min);
+                assert(best_bytes >= squeeze_deflate_len_min);
                 assert(memcmp(data + i - best_distance, data + i, best_bytes) == 0);
                 len = best_bytes;
                 pos = best_distance;
@@ -299,7 +386,7 @@ static void squeeze_compress(squeeze_type* s, const uint8_t* data, uint64_t byte
                 #endif
             }
         }
-        if (len >= deflate_len_min) {
+        if (len >= squeeze_deflate_len_min) {
             assert(0 < pos && pos <= 0x7FFF);
             squeeze_encode_len(s, (uint16_t)len);
             squeeze_encode_pos(s, (uint16_t)pos);
@@ -326,7 +413,7 @@ static void squeeze_compress(squeeze_type* s, const uint8_t* data, uint64_t byte
             huffman_entropy(&s->lit), li_percent,
             huffman_entropy(&s->pos), br_percent);
         if (map_count > 0) {
-            printf("avg dic distance: %.1f length: %.1f count: %lld\n", 
+            printf("avg dic distance: %.1f length: %.1f count: %lld\n",
                     map_distance_sum / map_count,
                     map_len_sum / map_count, map_count);
         }
@@ -381,19 +468,19 @@ static void squeeze_read_header(bitstream_type* bs, uint64_t *bytes,
 }
 
 static uint16_t squeeze_read_length(squeeze_type* s, uint16_t lit) {
-    const uint8_t base = (uint8_t)(lit - 257);
-    if (base >= countof(deflate_len_base)) { 
+    const uint8_t base = (uint8_t)(lit - squeeze_deflate_sym_min);
+    if (base >= countof(squeeze_len_base)) {
         s->error = EINVAL;
         return 0;
     } else {
-        const uint8_t bits = deflate_len_extra_bits[base];
+        const uint8_t bits = squeeze_len_xb[base];
         if (bits != 0) {
             uint64_t extra = squeeze_read_bits(s, bits);
-            assert(deflate_len_base[base] + extra <= UINT16_MAX);
-            return s->error == 0 ? 
-                (uint16_t)deflate_len_base[base] + (uint16_t)extra : 0;
+            assert(squeeze_len_base[base] + extra <= UINT16_MAX);
+            return s->error == 0 ?
+                (uint16_t)squeeze_len_base[base] + (uint16_t)extra : 0;
         } else {
-            return deflate_len_base[base];
+            return squeeze_len_base[base];
         }
     }
 }
@@ -403,19 +490,19 @@ static uint32_t squeeze_read_pos(squeeze_type* s) {
     uint64_t base = squeeze_read_huffman(s, &s->pos);
     if (s->error == 0 && base == squeeze_pos_nyt) {
         base = squeeze_read_bits(s, 5);
-        if (s->error == 0) { 
+        if (s->error == 0) {
             if (!huffman_insert(&s->pos, (int32_t)base)) {
                 s->error = E2BIG;
             }
         }
     }
-    if (s->error == 0 && base >= countof(deflate_pos_base)) {
+    if (s->error == 0 && base >= countof(squeeze_pos_base)) {
         s->error = EINVAL;
     } else {
-        pos = deflate_pos_base[base];
+        pos = squeeze_pos_base[base];
     }
-    if (s->error == 0) { 
-        uint8_t bits  = deflate_pos_extra_bits[base];
+    if (s->error == 0) {
+        uint8_t bits  = squeeze_pos_xb[base];
         if (bits > 0) {
             uint64_t extra = squeeze_read_bits(s, bits);
             if (s->error == 0) { pos += (uint32_t)extra; }
@@ -425,9 +512,9 @@ static uint32_t squeeze_read_pos(squeeze_type* s) {
 }
 
 static void squeeze_decompress(squeeze_type* s, uint8_t* data, uint64_t bytes) {
-    huffman_insert(&s->lit, squeeze_lit_nyt);
-    huffman_insert(&s->pos, squeeze_pos_nyt);
-    deflate_init();
+    if (!huffman_insert(&s->lit, squeeze_lit_nyt)) { s->error = EINVAL; }
+    if (!huffman_insert(&s->pos, squeeze_pos_nyt)) { s->error = EINVAL; }
+    squeeze_deflate_init(s);
     size_t i = 0; // output b64[i]
     while (i < bytes && s->error == 0) {
         uint64_t lit = squeeze_read_huffman(s, &s->lit);
@@ -445,12 +532,12 @@ static void squeeze_decompress(squeeze_type* s, uint8_t* data, uint64_t bytes) {
             data[i] = (uint8_t)lit;
             i++;
         } else {
-            assert(257 <= lit && lit < squeeze_lit_nyt);
-            if (257 <= lit && lit <= squeeze_lit_nyt) {
+            assert(squeeze_deflate_sym_min <= lit && lit < squeeze_lit_nyt);
+            if (squeeze_deflate_sym_min <= lit && lit <= squeeze_lit_nyt) {
                 uint32_t len = squeeze_read_length(s, (uint16_t)lit);
                 if (s->error != 0) { break; }
-                assert(deflate_len_min <= len && len <= deflate_len_max); 
-                if (deflate_len_min <= len && len <= deflate_len_max) { 
+                assert(squeeze_deflate_len_min <= len && len <= squeeze_deflate_len_max);
+                if (squeeze_deflate_len_min <= len && len <= squeeze_deflate_len_max) {
                     uint32_t pos = squeeze_read_pos(s);
                     if (s->error != 0) { break; }
                     assert(0 < pos && pos <= 0x7FFF);
@@ -464,7 +551,7 @@ static void squeeze_decompress(squeeze_type* s, uint8_t* data, uint64_t bytes) {
                         s->error = EINVAL;
                     }
                 } else {
-                    s->error = EINVAL; 
+                    s->error = EINVAL;
                 }
             } else {
                 s->error = EINVAL;
@@ -484,3 +571,42 @@ squeeze_interface squeeze = {
 };
 
 #endif // squeeze_implementation
+
+
+/*
+    DEFLATE compression (most commonly used compression method in ZIP),
+    the compressed data is represented as a bitstream consisting of a
+    combination of Literals, Length/Distance pairs (for backreferences).
+
+    Overview of the DEFLATE Encoding Bitstream:
+
+    Literals:
+
+    A literal is any single uncompressed byte from the input.
+    Literal values are represented by their ASCII code (0-255)
+    and are output directly (via Huffman code) when encountered in the input.
+    Length/Distance pairs (Backreferences):
+
+    When a sequence of bytes has been repeated earlier in the input stream,
+    the DEFLATE algorithm uses a backreference to refer to the earlier
+    occurrence.
+    This is encoded as a length (for how many bytes to copy) and a distance
+    (where to copy from in the previously decompressed data).
+
+    The bitstream encodes these two values as follows:
+
+    Length:
+        The length value is encoded with a base length and extra bits.
+        There are 29 possible length codes ranging from 3 to 258.
+        Length codes 257-285 are reserved for length encoding.
+        Each length code has a corresponding base length and extra bits
+        to refine the exact length.
+
+    Distance:
+        The distance value is encoded similarly, with a base distance
+        and extra bits.
+        There are 30 possible distance codes for distances
+        from 1 to 32,768 bytes.
+        Distance codes range from 0 to 29, and each code represents a
+        base distance with extra bits to refine the exact distance.
+*/

@@ -13,7 +13,7 @@
 
 // Using hash map dictionary actually makes compression worse.
 // The reason is that the dictionary references introducse "far"
-// relatively large distances and the position encoding for 
+// relatively large distances and the position encoding for
 // distance that uses small Huffman (31 terminals tree) becomes
 // noisy and a lot of extra bits are written as a result.
 // To make dictionary work, implementation of LZMA like scheme
@@ -135,7 +135,7 @@ static errno_t verify(const char* fn, const uint8_t* input, size_t size) {
                     // ENODATA is not original posix error but is OpenGroup error
                     r = ENODATA; // or EIO
                 } else if (bytes < 128) {
-                    printf("decompressed: %.*s\n", (unsigned int)bytes, data);
+//                  printf("decompressed: %.*s\n", (unsigned int)bytes, data);
                 }
                 assert(same);
             } else {

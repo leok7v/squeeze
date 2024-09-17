@@ -21,7 +21,6 @@
   <ItemGroup>
     <ClInclude Include="../rt.h" />
     <ClInclude Include="..\bitstream.h" />
-    <ClInclude Include="..\deflate.h" />
     <ClInclude Include="..\file.h" />
     <ClInclude Include="..\huffman.h" />
     <ClInclude Include="..\map.h" />
@@ -151,7 +150,7 @@
       <AdditionalOptions>/std:clatest %(AdditionalOptions)</AdditionalOptions>
       <debugInformationFormat>OldStyle</debugInformationFormat>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <EnableEnhancedInstructionSet>AdvancedVectorExtensions</EnableEnhancedInstructionSet>
+      <EnableEnhancedInstructionSet>StreamingSIMDExtensions2</EnableEnhancedInstructionSet>
       <ExceptionHandling>false</ExceptionHandling>
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>

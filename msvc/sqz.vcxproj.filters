@@ -13,7 +13,6 @@
     <ClInclude Include="..\rt_generics.h" />
     <ClInclude Include="..\file.h" />
     <ClInclude Include="..\squeeze.h" />
-    <ClInclude Include="..\deflate.h" />
     <ClInclude Include="..\map.h" />
   </ItemGroup>
   <ItemGroup>

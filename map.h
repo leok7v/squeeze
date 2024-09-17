@@ -4,11 +4,12 @@
 #include <stdint.h>
 #include <string.h>
 
-#ifndef assert
-#define assert(...) do {} while (0)
-#endif
 #ifndef null
 #define null ((void*)0)
+#endif
+
+#ifndef assert
+#include <assert.h>
 #endif
 
 // Very simple hash map for lz77 compression dictionary
@@ -101,7 +102,7 @@ static int32_t map_put(map_type* m, const void* d, uint32_t b) {
         size_t i = (size_t)hash % m->n;
         uint32_t chain = 0; // max chain length
         while (entries[i].bytes > 0) {
-            if (entries[i].bytes == b && entries[i].hash == hash && 
+            if (entries[i].bytes == b && entries[i].hash == hash &&
                 memcmp(entries[i].data, d, b) == 0) {
                 assert((const uint8_t*)d > (const uint8_t*)entries[i].data);
 //              printf("move %lld\n", (const uint8_t*)d - (const uint8_t*)entries[i].data);

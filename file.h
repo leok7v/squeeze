@@ -27,12 +27,12 @@ extern file_interface file;
 #include <unistd.h> // chdir
 #endif
 
-#ifndef assert
-#include <assert.h>
-#endif
-
 #ifndef null
 #define null ((void*)0)
+#endif
+
+#ifndef assert
+#include <assert.h>
 #endif
 
 static bool file_exist(const char* filename) {

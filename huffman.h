@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <errno.h>
 
-// Adaptive Huffman Coding  
+// Adaptive Huffman Coding
 // https://en.wikipedia.org/wiki/Adaptive_Huffman_coding
 
 typedef struct huffman_node_struct {
@@ -41,12 +41,12 @@ static inline double huffman_entropy(const huffman_tree_type* t); // Shannon ent
 
 #define huffman_implemented
 
-#ifndef assert
-#include <assert.h>
-#endif
-
 #ifndef null
 #define null ((void*)0)
+#endif
+
+#ifndef assert
+#include <assert.h>
 #endif
 
 static void huffman_update_paths(huffman_tree_type* t, int32_t i) {
@@ -244,7 +244,7 @@ static inline void huffman_inc_frequency(huffman_tree_type* t, int32_t i) {
     }
 }
 
-static inline double huffman_entropy(const huffman_tree_type* t) { 
+static inline double huffman_entropy(const huffman_tree_type* t) {
     // Shannon entropy
     double total = 0;
     double aha_entropy = 0.0;
@@ -258,7 +258,7 @@ static inline double huffman_entropy(const huffman_tree_type* t) {
     return -aha_entropy;
 }
 
-static inline void huffman_init(huffman_tree_type* t, 
+static inline void huffman_init(huffman_tree_type* t,
                                 huffman_node_type nodes[],
                                 const size_t count) {
     assert(7 <= count && count < INT32_MAX); // must pow(2, bits_per_symbol) * 2 - 1
