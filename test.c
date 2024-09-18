@@ -7,8 +7,10 @@
 #define printf(...)    rt_printf(__VA_ARGS__)
 #define countof(a)     rt_countof(a)
 
-#include "squeeze.h"
 #include "file.h"
+
+#define squeeze_implementation
+#include "squeeze.h"
 
 #ifdef SQUEEZE_MAX_WINDOW // maximum window
 enum { bits_win = 15 }; // 32KB
@@ -23,13 +25,15 @@ enum { bits_win = 11 }; // 2KB
 // zip: (MS Windows)
 // 4436173 -> 1398871 31.5% of "bible.txt"
 
+// Testing is limited to "size_t" and "int" precision
+
 static inline errno_t write_file(struct bitstream* bs) {
     size_t written = fwrite(&bs->b64, 8, 1, (FILE*)bs->stream);
     return written == 1 ? 0 : errno;
 }
 
 static errno_t compress(const char* from, const char* to,
-                        const uint8_t* data, uint64_t bytes) {
+                        const uint8_t* data, size_t bytes) {
     FILE* out = null; // compressed file
     errno_t r = fopen_s(&out, to, "wb") != 0;
     if (r != 0 || out == null) {
@@ -61,12 +65,16 @@ static errno_t compress(const char* from, const char* to,
         if (fn != null) { fn++; } else { fn = (char*)from; }
         const uint64_t written = bs.bytes;
         double percent = written * 100.0 / bytes;
+        double bps = written * 8.0 / bytes; // bits per symbol
         if (from != null) {
-            printf("%7lld -> %7lld %5.1f%% of \"%s\"\n",
-                   bytes, written, percent, fn);
+            printf("%7d bps: %.1f -> %7d %5.1f%% of \"%s\" ",
+                  (int)bytes, bps, (int)written, percent, fn);
         } else {
-            printf("%7lld -> %7lld %5.1f%%\n", bytes, written, percent);
+            printf("%7d bps: %.1f -> %7d %5.1f%% ",
+                  (int)bytes, bps, (int)written, percent);
         }
+        printf("Shannon entropy H: %.1f %.1f\n",
+                huffman_entropy(&s.lit), huffman_entropy(&s.pos));
     }
     return r;
 }
@@ -92,6 +100,10 @@ static errno_t verify(const char* fn, const uint8_t* input, size_t size) {
             r = bs.error;
         }
     }
+    if (bytes > SIZE_MAX) {
+        printf("File too large to decompress\n");
+        r = EFBIG;
+    }
     if (r == 0) {
         static struct squeeze s; // static to avoid >64KB stack warning
         squeeze_init(&s);
@@ -102,17 +114,18 @@ static errno_t verify(const char* fn, const uint8_t* input, size_t size) {
             fclose(in);
             return ENOMEM;
         }
-        squeeze_decompress(&s, &bs, data, bytes);
+        squeeze_decompress(&s, &bs, data, (size_t)bytes);
         fclose(in);
         assert(s.error == 0);
         if (s.error == 0) {
-            const bool same = size == bytes && memcmp(input, data, bytes) == 0;
+            const bool same = size == bytes &&
+                       memcmp(input, data, (size_t)bytes) == 0;
             if (!same) {
                 int64_t k = -1;
                 for (size_t i = 0; i < rt_min(bytes, size) && k < 0; i++) {
                     if (input[i] != data[i]) { k = (int64_t)i; }
                 }
-                printf("compress() and decompress() differ @%lld\n", k);
+                printf("compress() and decompress() differ @%d\n", (int)k);
                 // ENODATA is not original posix error but is OpenGroup error
                 r = ENODATA; // or EIO
             }

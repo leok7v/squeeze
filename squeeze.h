@@ -84,6 +84,8 @@ void squeeze_read_header(struct bitstream* bs, uint64_t *bytes);
 void squeeze_decompress(struct squeeze* s, struct bitstream* bs,
                         uint8_t* data, size_t bytes);
 
+#ifdef squeeze_implementation
+
 #ifndef null
 #define null ((void*)0) // like null_ptr a bit better than NULL (0)
 #endif
@@ -698,6 +700,8 @@ void squeeze_decompress(struct squeeze* s, struct bitstream* bs,
         }
     }
 }
+
+#endif // squeeze_implementation
 
 #if defined(__cplusplus)
 } // extern "C"

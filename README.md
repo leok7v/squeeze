@@ -10,6 +10,9 @@ https://en.wikipedia.org/wiki/Adaptive_Huffman_coding
 
 https://en.wikipedia.org/wiki/Deflate
 
+https://en.wikipedia.org/wiki/Header-only
+https://github.com/nothings/single_file_libs
+
 ### Goals:
 
 * Simplicity (squeeze.h LoC: < 700).
