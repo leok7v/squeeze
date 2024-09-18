@@ -23,7 +23,7 @@ enum { bits_win = 11 }; // 2KB
 // zip: (MS Windows)
 // 4436173 -> 1398871 31.5% of "bible.txt"
 
-static inline errno_t write_file(bitstream* bs) {
+static inline errno_t write_file(struct bitstream* bs) {
     size_t written = fwrite(&bs->b64, 8, 1, (FILE*)bs->stream);
     return written == 1 ? 0 : errno;
 }
@@ -36,15 +36,15 @@ static errno_t compress(const char* from, const char* to,
         printf("Failed to create \"%s\": %s\n", to, strerror(r));
         return r;
     }
-    static squeeze_type s; // static to avoid >64KB stack warning
-    squeeze.init(&s);
-    bitstream bs = { .stream = out, .output = write_file };
-    squeeze.write_header(&bs, bytes);
+    static struct squeeze s; // static to avoid >64KB stack warning
+    squeeze_init(&s);
+    struct bitstream bs = { .stream = out, .output = write_file };
+    squeeze_write_header(&bs, bytes);
     if (bs.error != 0) {
         r = bs.error;
         printf("Failed to create \"%s\": %s\n", to, strerror(r));
     } else {
-        squeeze.compress(&s, &bs, data, bytes, 1u << bits_win);
+        squeeze_compress(&s, &bs, data, bytes, 1u << bits_win);
         assert(s.error == 0);
     }
     errno_t rc = fclose(out) == 0 ? 0 : errno; // error writing buffered output
@@ -62,8 +62,8 @@ static errno_t compress(const char* from, const char* to,
         const uint64_t written = bs.bytes;
         double percent = written * 100.0 / bytes;
         if (from != null) {
-            printf("%7lld -> %7lld %5.1f%% of \"%s\"\n", bytes, written,
-                                                            percent, fn);
+            printf("%7lld -> %7lld %5.1f%% of \"%s\"\n",
+                   bytes, written, percent, fn);
         } else {
             printf("%7lld -> %7lld %5.1f%%\n", bytes, written, percent);
         }
@@ -71,7 +71,7 @@ static errno_t compress(const char* from, const char* to,
     return r;
 }
 
-static inline errno_t read_file(bitstream* bs) {
+static inline errno_t read_file(struct bitstream* bs) {
     size_t read = fread(&bs->b64, 8, 1, (FILE*)bs->stream);
     return read == 1 ? 0 : errno;
 }
@@ -83,18 +83,18 @@ static errno_t verify(const char* fn, const uint8_t* input, size_t size) {
     if (r != 0 || in == null) {
         printf("Failed to open \"%s\"\n", fn);
     }
-    bitstream bs = { .stream = in, .input = read_file };
+    struct bitstream bs = { .stream = in, .input = read_file };
     uint64_t bytes = 0;
     if (r == 0) {
-        squeeze.read_header(&bs, &bytes);
+        squeeze_read_header(&bs, &bytes);
         if (bs.error != 0) {
             printf("Failed to read header from \"%s\"\n", fn);
             r = bs.error;
         }
     }
     if (r == 0) {
-        static squeeze_type s; // static to avoid >64KB stack warning
-        squeeze.init(&s);
+        static struct squeeze s; // static to avoid >64KB stack warning
+        squeeze_init(&s);
         assert(bytes == size);
         uint8_t* data = (uint8_t*)calloc(1, (size_t)bytes);
         if (data == null) {
@@ -102,7 +102,7 @@ static errno_t verify(const char* fn, const uint8_t* input, size_t size) {
             fclose(in);
             return ENOMEM;
         }
-        squeeze.decompress(&s, &bs, data, bytes);
+        squeeze_decompress(&s, &bs, data, bytes);
         fclose(in);
         assert(s.error == 0);
         if (s.error == 0) {
@@ -201,6 +201,3 @@ int main(int argc, const char* argv[]) {
     }
     return r;
 }
-
-#define squeeze_implementation
-#include "squeeze.h"

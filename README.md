@@ -12,12 +12,10 @@ https://en.wikipedia.org/wiki/Deflate
 
 ### Goals:
 
-* Simplicity (squeeze.h LoC: ~750).
+* Simplicity (squeeze.h LoC: < 700).
 * Ease of build and use (C99/C17/C23).
 * Amalgamated into single header file library.
 * No external dependencies.
-* No memory heap malloc() / free()
-* Minimize name pollution of global namespace in C.
 
 ### No goals:
 
