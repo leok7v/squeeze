@@ -5,9 +5,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
 #ifdef _WIN32
 #include <direct.h> // chdir
+#define chdir(d) _chdir(d)
 #else
 #include <unistd.h> // chdir
 #endif

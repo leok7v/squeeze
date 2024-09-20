@@ -43,13 +43,15 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="../rt.h" />
-    <ClInclude Include="..\file.h" />
-    <ClInclude Include="..\rt_generics.h" />
-    <ClInclude Include="..\squeeze.h" />
+    <ClInclude Include="..\inc\rt\file.h" />
+    <ClInclude Include="..\inc\rt\rt.h" />
+    <ClInclude Include="..\inc\rt\rt_generics.h" />
+    <ClInclude Include="..\inc\squeeze\squeeze.h" />
+    <ClInclude Include="..\shl\squeeze\squeeze.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="../test.c" />
+    <ClCompile Include="..\src\squeeze.c" />
     <ClCompile Include="..\test\sqlite3.c">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='release|ARM64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='release|ARM64EC'">true</ExcludedFromBuild>
@@ -67,6 +69,10 @@
     <None Include="../scripts/download.bat" />
     <None Include="../README.md" />
     <None Include="..\.gitignore" />
+    <None Include="..\scripts\amalgamate.bat" />
+    <None Include="..\scripts\amalgamate.sh" />
+    <None Include="..\scripts\clean.bat" />
+    <None Include="..\shl\README.md" />
     <None Include="..\test\arm64.elf" />
     <None Include="..\test\x64.elf" />
   </ItemGroup>
@@ -85,7 +91,7 @@
     <ProjectGuid>{B71B5CA9-E0DD-4851-A041-BAAF0E386327}</ProjectGuid>
     <RootNamespace>squeeze</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <ProjectName>squeeze</ProjectName>
+    <ProjectName>test</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug|x64'" Label="Configuration">
@@ -229,6 +235,7 @@
       <debugInformationFormat>OldStyle</debugInformationFormat>
       <SupportJustMyCode>false</SupportJustMyCode>
       <RuntimeLibrary>MultiThreadeddebug</RuntimeLibrary>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -240,6 +247,12 @@
     <PostBuildEvent>
       <Message>downloading test materials (if needed)</Message>
     </PostBuildEvent>
+    <PreBuildEvent>
+      <Command>../scripts/amalgamate.bat</Command>
+    </PreBuildEvent>
+    <PreBuildEvent>
+      <Message>amalgamate squeeze.h and squeeze.c into single header lib</Message>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">
     <ClCompile>
@@ -251,6 +264,7 @@
       <debugInformationFormat>OldStyle</debugInformationFormat>
       <SupportJustMyCode>false</SupportJustMyCode>
       <RuntimeLibrary>MultiThreadeddebug</RuntimeLibrary>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -262,6 +276,12 @@
     <PostBuildEvent>
       <Message>downloading test materials (if needed)</Message>
     </PostBuildEvent>
+    <PreBuildEvent>
+      <Command>../scripts/amalgamate.bat</Command>
+    </PreBuildEvent>
+    <PreBuildEvent>
+      <Message>amalgamate squeeze.h and squeeze.c into single header lib</Message>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='release|x64'">
     <ClCompile>
@@ -278,6 +298,7 @@
       <ExceptionHandling>false</ExceptionHandling>
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -290,6 +311,12 @@
       <Command>../scripts/download.bat</Command>
       <Message>downloading test materials (if needed)</Message>
     </PostBuildEvent>
+    <PreBuildEvent>
+      <Command>../scripts/amalgamate.bat</Command>
+    </PreBuildEvent>
+    <PreBuildEvent>
+      <Message>amalgamate squeeze.h and squeeze.c into single header lib</Message>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='release|Win32'">
     <ClCompile>
@@ -306,6 +333,7 @@
       <ExceptionHandling>false</ExceptionHandling>
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -318,6 +346,12 @@
       <Command>../scripts/download.bat</Command>
       <Message>downloading test materials (if needed)</Message>
     </PostBuildEvent>
+    <PreBuildEvent>
+      <Command>../scripts/amalgamate.bat</Command>
+    </PreBuildEvent>
+    <PreBuildEvent>
+      <Message>amalgamate squeeze.h and squeeze.c into single header lib</Message>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='debug|ARM64'">
     <ClCompile>
@@ -329,6 +363,7 @@
       <debugInformationFormat>OldStyle</debugInformationFormat>
       <SupportJustMyCode>false</SupportJustMyCode>
       <RuntimeLibrary>MultiThreadeddebug</RuntimeLibrary>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -340,6 +375,12 @@
     <PostBuildEvent>
       <Message>downloading test materials (if needed)</Message>
     </PostBuildEvent>
+    <PreBuildEvent>
+      <Command>../scripts/amalgamate.bat</Command>
+    </PreBuildEvent>
+    <PreBuildEvent>
+      <Message>amalgamate squeeze.h and squeeze.c into single header lib</Message>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='debug|ARM64EC'">
     <ClCompile>
@@ -351,6 +392,7 @@
       <debugInformationFormat>OldStyle</debugInformationFormat>
       <SupportJustMyCode>false</SupportJustMyCode>
       <RuntimeLibrary>MultiThreadeddebug</RuntimeLibrary>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -362,6 +404,12 @@
     <PostBuildEvent>
       <Message>downloading test materials (if needed)</Message>
     </PostBuildEvent>
+    <PreBuildEvent>
+      <Command>../scripts/amalgamate.bat</Command>
+    </PreBuildEvent>
+    <PreBuildEvent>
+      <Message>amalgamate squeeze.h and squeeze.c into single header lib</Message>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='debug|ARM'">
     <ClCompile>
@@ -374,6 +422,7 @@
       <SupportJustMyCode>false</SupportJustMyCode>
       <RuntimeLibrary>MultiThreadeddebug</RuntimeLibrary>
       <EnableEnhancedInstructionSet>ARMVFPv4Instructions</EnableEnhancedInstructionSet>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -385,6 +434,12 @@
     <PostBuildEvent>
       <Message>downloading test materials (if needed)</Message>
     </PostBuildEvent>
+    <PreBuildEvent>
+      <Command>../scripts/amalgamate.bat</Command>
+    </PreBuildEvent>
+    <PreBuildEvent>
+      <Message>amalgamate squeeze.h and squeeze.c into single header lib</Message>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='release|ARM64'">
     <ClCompile>
@@ -404,6 +459,7 @@
       <ExceptionHandling>false</ExceptionHandling>
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -415,6 +471,12 @@
       <Command>../scripts/download.bat</Command>
       <Message>downloading test materials (if needed)</Message>
     </PostBuildEvent>
+    <PreBuildEvent>
+      <Command>../scripts/amalgamate.bat</Command>
+    </PreBuildEvent>
+    <PreBuildEvent>
+      <Message>amalgamate squeeze.h and squeeze.c into single header lib</Message>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='release|ARM64EC'">
     <ClCompile>
@@ -434,6 +496,7 @@
       <ExceptionHandling>false</ExceptionHandling>
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -445,6 +508,12 @@
       <Command>../scripts/download.bat</Command>
       <Message>downloading test materials (if needed)</Message>
     </PostBuildEvent>
+    <PreBuildEvent>
+      <Command>../scripts/amalgamate.bat</Command>
+    </PreBuildEvent>
+    <PreBuildEvent>
+      <Message>amalgamate squeeze.h and squeeze.c into single header lib</Message>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='release|ARM'">
     <ClCompile>
@@ -464,6 +533,7 @@
       <ExceptionHandling>false</ExceptionHandling>
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -475,6 +545,12 @@
       <Command>../scripts/download.bat</Command>
       <Message>downloading test materials (if needed)</Message>
     </PostBuildEvent>
+    <PreBuildEvent>
+      <Command>../scripts/amalgamate.bat</Command>
+    </PreBuildEvent>
+    <PreBuildEvent>
+      <Message>amalgamate squeeze.h and squeeze.c into single header lib</Message>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

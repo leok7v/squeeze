@@ -27,7 +27,22 @@ https://github.com/nothings/single_file_libs
 * Stream to stream encoding decoding.
 * 16 and 32 bit CPU architectures.
 
-### Overview:
+### Lose ends:
+
+* * attic/map.h does not improve compression (needs range coding)
+* map still can be used inside the window to speed up LZ77 search
+* Average number of extra bits for position (aka distance) is rather
+  high in the test materials 6.9 .. 7.9. Maybe possible to change
+  position Huffman table to be bigger than 5 bits to reduce number
+  of extra bits even without doing range encoding.
+
+### Code layout:
+
+* inc/squeeze/squeeze.h - main header file
+* src/squeeze.c - implementation
+* shl/squeeze/squeeze.h - amalgamated single header library
+
+### Algorithm Overview:
 
 The `squeeze` interface operates as a custom DEFLATE compression method, 
 primarily relying on Huffman coding and LZ77 compression techniques. 
@@ -124,6 +139,26 @@ represent both literal bytes and length/position pairs compactly.
 By updating the Huffman trees as data is processed, the compressor 
 adapts to the characteristics of the input data, ensuring that 
 commonly occurring symbols are represented with fewer bits.
+
+### Supported Integer models:
+
+| Model     | ILP32 | ILP64 | LP64 | LLP64 |
+|-----------|-------|-------|------|-------|
+| int       | 32    | 64    | 32   | 32    |
+| long      | 32    | 64    | 64   | 32    |
+| pointer   | 32    | 64    | 64   | 64    |
+| long long | 64    | 64    | 64   | 64    |
+
+### Build targets:
+
+* x86     (Win) 32 bit (ILP32)
+* x64     (Win) 64 bit LLP64 
+* ARM64EC (Win) same as ARM64 
+* ARM64   (Win) 64 bit LLP64 
+* ARM64   (Nix) 64 bit LP64 
+* ARM     (Win) 32 bit ILP32 cross compilation
+
+size_t could be int32_t / uint32_t or uint64_t on *P64  
 
 ### Test materials:
 

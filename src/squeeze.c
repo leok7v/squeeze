@@ -1,90 +1,28 @@
-#ifndef squeeze_h
-#define squeeze_h
+#ifdef _MSC_VER // cl.exe compiler:
+#pragma warning(disable: 4710) // '...': function not inlined
+#pragma warning(disable: 4711) // function '...' selected for automatic inline expansion
+#pragma warning(disable: 4820) // '...' bytes padding added after data member '...'
+#pragma warning(disable: 4996) // The POSIX name for this item is deprecated.
+#pragma warning(disable: 5045) // Compiler will insert Spectre mitigation
+#pragma warning(disable: 4820) // bytes padding added after data member
+#endif
 
-#ifndef assert // allow to use already defined assert()
+#include "squeeze/squeeze.h"
+
+#ifndef assert // allows to overide assert in single header lib
 #include <assert.h>
 #endif
-#include <errno.h>
-#include <stdint.h>
+#include <math.h>
+#include <stdbool.h>
 #include <string.h>
 
 enum {
-    squeeze_deflate_sym_min   = 257, // minimum literal for length base
-    squeeze_deflate_sym_max   = 284, // maximum literal for length base
-    squeeze_deflate_pos_max   = 29,  // maximum pos base index
-    squeeze_deflate_len_min   = 3,
+    squeeze_deflate_sym_min  = 257, // minimum literal for length base
+    squeeze_deflate_pos_max  = 29,  // maximum pos base index
+    squeeze_deflate_len_min  = 3,
     // value is the same but unrelated to squeeze_deflate_sym_min:
-    squeeze_deflate_len_max   = 257,
-    squeeze_deflate_distance  = 0x7FFF // maximum position distance
+    squeeze_deflate_len_max  = 257,
 };
-
-enum { // "nyt" stands for Not Yet Transmitted (see Vitter Algorithm)
-    squeeze_min_win_bits  =  10,
-    squeeze_max_win_bits  =  15,
-    squeeze_lit_nyt       =  squeeze_deflate_sym_max + 1,
-    squeeze_pos_nyt       =  squeeze_deflate_pos_max + 1,
-};
-
-struct huffman_node {
-    uint64_t freq;
-    uint64_t path;
-    int32_t  bits; // 0 for root
-    int32_t  pix;  // parent
-    int32_t  lix;  // left
-    int32_t  rix;  // right
-};
-
-struct huffman {
-    struct huffman_node* node;
-    int32_t n;
-    int32_t next;  // next non-terminal nodes in the tree >= n
-    int32_t depth; // max tree depth seen
-    int32_t complete; // tree is too deep or freq too high - no more updates
-    // stats:
-    struct {
-        size_t updates;
-        size_t swaps;
-        size_t moves;
-    } stats;
-};
-
-struct bitstream {
-    void*    stream; // stream and (data,capacity) are exclusive
-    uint8_t* data;
-    uint64_t capacity; // data[capacity]
-    uint64_t bytes; // number of bytes written
-    uint64_t read;  // number of bytes read
-    uint64_t b64;   // bit shifting buffer
-    int32_t  bits;  // bit count inside b64
-    errno_t  error; // sticky error
-    errno_t (*output)(struct bitstream* bs); // write b64 as 8 bytes
-    errno_t (*input)(struct bitstream* bs);  // read b64 as 8 bytes
-};
-
-struct squeeze {
-    errno_t error; // sticky
-    struct huffman lit; // 0..255 literal bytes; 257-285 length
-    struct huffman pos; // positions tree of 1^win_bits
-    struct huffman_node lit_nodes[512 * 2 - 1];
-    struct huffman_node pos_nodes[32 * 2 - 1];
-    struct bitstream* bs;
-    uint8_t len_index[squeeze_deflate_sym_max  + 1]; // squeeze_len_base index
-    uint8_t pos_index[squeeze_deflate_distance + 1]; // squeeze_pos_base index
-};
-
-#if defined(__cplusplus)
-} // extern "C"
-#endif
-
-void squeeze_init(struct squeeze* s);
-void squeeze_write_header(struct bitstream* bs, uint64_t bytes);
-void squeeze_compress(struct squeeze* s, struct bitstream* bs,
-                      const uint8_t* data, size_t bytes, uint16_t window);
-void squeeze_read_header(struct bitstream* bs, uint64_t *bytes);
-void squeeze_decompress(struct squeeze* s, struct bitstream* bs,
-                        uint8_t* data, size_t bytes);
-
-#ifdef squeeze_implementation
 
 #ifndef null
 #define null ((void*)0) // like null_ptr a bit better than NULL (0)
@@ -110,7 +48,7 @@ static inline void bitstream_write_bit(struct bitstream* bs, int32_t bit) {
                     }
                 }
             } else {
-                bs->error = bs->output(bs);
+                bs->error = bs->write64(bs);
                 if (bs->error == 0) { bs->bytes += 8; }
             }
             bs->bits = 0;
@@ -144,7 +82,7 @@ static inline int bitstream_read_bit(struct bitstream* bs) {
                     }
                 }
             } else {
-                bs->error = bs->input(bs);
+                bs->error = bs->read64(bs);
                 if (bs->error == 0) { bs->read += 8; }
             }
             bs->bits = 64;
@@ -351,19 +289,6 @@ static inline bool huffman_inc_frequency(struct huffman* t, int32_t i) {
     return done;
 }
 
-static inline double huffman_entropy(const struct huffman* t) { // Shannon
-    double total = 0;
-    double entropy = 0.0;
-    for (int32_t i = 0; i < t->n; i++) { total += (double)t->node[i].freq; }
-    for (int32_t i = 0; i < t->n; i++) {
-        if (t->node[i].freq > 0) {
-            double p_i = (double)t->node[i].freq / total;
-            entropy += p_i * log2(p_i);
-        }
-    }
-    return -entropy;
-}
-
 static inline void huffman_init(struct huffman* t,
                                 struct huffman_node nodes[],
                                 const size_t count) {
@@ -439,7 +364,6 @@ static const uint8_t squeeze_pos_xb[30] = { // extra bits
     13, 13      // 28-29
 };
 
-
 static void squeeze_deflate_init(struct squeeze* s) {
     uint8_t  j = 0;
     uint16_t n = squeeze_len_base[j] + (1u << squeeze_len_xb[j]);
@@ -464,6 +388,19 @@ static void squeeze_deflate_init(struct squeeze* s) {
 void squeeze_init(struct squeeze* s) {
     huffman_init(&s->lit, s->lit_nodes, countof(s->lit_nodes));
     huffman_init(&s->pos, s->pos_nodes, countof(s->pos_nodes));
+}
+
+double squeeze_shannon_entropy(const struct huffman* t) {
+    double total = 0;
+    double entropy = 0.0;
+    for (int32_t i = 0; i < t->n; i++) { total += (double)t->node[i].freq; }
+    for (int32_t i = 0; i < t->n; i++) {
+        if (t->node[i].freq > 0) {
+            double p_i = (double)t->node[i].freq / total;
+            entropy += p_i * log2(p_i);
+        }
+    }
+    return -entropy;
 }
 
 static inline void squeeze_write_bit(struct squeeze* s, bool bit) {
@@ -499,6 +436,11 @@ void squeeze_write_header(struct bitstream* bs, uint64_t bytes) {
     bitstream_write_bits(bs, (uint64_t)bytes, sizeof(uint64_t) * 8);
 }
 
+enum { // "nyt" stands for Not Yet Transmitted (see Vitter Algorithm)
+    squeeze_lit_nyt = squeeze_deflate_sym_max + 1,
+    squeeze_pos_nyt = squeeze_deflate_pos_max + 1
+};
+
 static inline void squeeze_encode_literal(struct squeeze* s, uint16_t lit) {
     if (s->lit.node[lit].bits == 0) {
         squeeze_write_huffman(s, &s->lit, squeeze_lit_nyt);
@@ -514,7 +456,11 @@ static inline void squeeze_encode_len(struct squeeze* s, uint16_t len) {
     uint16_t b = squeeze_len_base[i];
     uint8_t  x = squeeze_len_xb[i];
     squeeze_encode_literal(s, (uint16_t)(squeeze_deflate_sym_min + i));
-    if (x > 0) { squeeze_write_bits(s, (len - b), x); }
+    if (x > 0) {
+        squeeze_write_bits(s, (len - b), x);
+        s->extra.len_sum += x;
+        s->extra.len_count++;
+    }
 }
 
 static inline void squeeze_encode_pos(struct squeeze* s, uint16_t pos) {
@@ -528,7 +474,11 @@ static inline void squeeze_encode_pos(struct squeeze* s, uint16_t pos) {
     } else {
         squeeze_write_huffman(s, &s->pos, i);
     }
-    if (x > 0) { squeeze_write_bits(s, (pos - b), x); }
+    if (x > 0) {
+        squeeze_write_bits(s, (pos - b), x);
+        s->extra.pos_sum += x;
+        s->extra.pos_count++;
+    }
 }
 
 void squeeze_compress(struct squeeze* s, struct bitstream* bs,
@@ -700,11 +650,3 @@ void squeeze_decompress(struct squeeze* s, struct bitstream* bs,
         }
     }
 }
-
-#endif // squeeze_implementation
-
-#if defined(__cplusplus)
-} // extern "C"
-#endif
-
-#endif // squeeze_h

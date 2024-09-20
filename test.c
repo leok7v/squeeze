@@ -1,26 +1,23 @@
-#include "rt.h"
+#include "rt/rt.h"
 
 #undef assert
-#undef countof
 
 #define assert(b, ...) rt_assert(b, __VA_ARGS__)
 #define printf(...)    rt_printf(__VA_ARGS__)
-#define countof(a)     rt_countof(a)
 
-#include "file.h"
+#include "rt/file.h"
 
-#define squeeze_implementation
-#include "squeeze.h"
+#include "squeeze/squeeze.h"
 
 #ifdef SQUEEZE_MAX_WINDOW // maximum window
-enum { bits_win = 15 }; // 32KB
+enum { window_bits = 15 }; // 32KB
 #elif defined(DEBUG) || defined(_DEBUG)
-enum { bits_win = 10 }; // 1KB
+enum { window_bits = 10 }; // 1KB
 #else
-enum { bits_win = 11 }; // 2KB
+enum { window_bits = 12 }; // 4KB
 #endif
 
-// bits_win = 15:
+// window_bits = 15:
 // 4436173 -> 1451352 32.7% of "bible.txt"
 // zip: (MS Windows)
 // 4436173 -> 1398871 31.5% of "bible.txt"
@@ -42,13 +39,13 @@ static errno_t compress(const char* from, const char* to,
     }
     static struct squeeze s; // static to avoid >64KB stack warning
     squeeze_init(&s);
-    struct bitstream bs = { .stream = out, .output = write_file };
+    struct bitstream bs = { .stream = out, .write64 = write_file };
     squeeze_write_header(&bs, bytes);
     if (bs.error != 0) {
         r = bs.error;
         printf("Failed to create \"%s\": %s\n", to, strerror(r));
     } else {
-        squeeze_compress(&s, &bs, data, bytes, 1u << bits_win);
+        squeeze_compress(&s, &bs, data, bytes, 1u << window_bits);
         assert(s.error == 0);
     }
     errno_t rc = fclose(out) == 0 ? 0 : errno; // error writing buffered output
@@ -67,14 +64,20 @@ static errno_t compress(const char* from, const char* to,
         double percent = written * 100.0 / bytes;
         double bps = written * 8.0 / bytes; // bits per symbol
         if (from != null) {
-            printf("%7d bps: %.1f -> %7d %5.1f%% of \"%s\" ",
+            printf("%7d bps: %.1f -> %7d %5.1f%% of \"%s\"",
                   (int)bytes, bps, (int)written, percent, fn);
+            printf("%*c", 14 - (int)strlen(fn), 0x20); // vertical tab
         } else {
-            printf("%7d bps: %.1f -> %7d %5.1f%% ",
+            printf("%7d bps: %.1f -> %7d %5.1f%%",
                   (int)bytes, bps, (int)written, percent);
+            printf("%*c", 14 + 6, 0x20); // vertical tab
         }
-        printf("Shannon entropy H: %.1f %.1f\n",
-                huffman_entropy(&s.lit), huffman_entropy(&s.pos));
+        printf("H.lit: %.1f H.pos: %.1f ",
+                squeeze_shannon_entropy(&s.lit),
+                squeeze_shannon_entropy(&s.pos));
+        printf("X.len: %.1f X.pos: %.1f\n",
+            s.extra.len_count > 0 ? s.extra.len_sum / s.extra.len_count : 0,
+            s.extra.pos_count > 0 ? s.extra.pos_sum / s.extra.pos_count : 0);
     }
     return r;
 }
@@ -91,7 +94,7 @@ static errno_t verify(const char* fn, const uint8_t* input, size_t size) {
     if (r != 0 || in == null) {
         printf("Failed to open \"%s\"\n", fn);
     }
-    struct bitstream bs = { .stream = in, .input = read_file };
+    struct bitstream bs = { .stream = in, .read64 = read_file };
     uint64_t bytes = 0;
     if (r == 0) {
         squeeze_read_header(&bs, &bytes);
@@ -174,6 +177,9 @@ static errno_t locate_test_folder(void) {
 
 int main(int argc, const char* argv[]) {
     (void)argc; (void)argv; // unused
+    printf("Compression Window: %d bytes\n", 1u << window_bits);
+    printf("H.* is Shannon Entropy expressed by bits per symbol\n");
+    printf("X.* is average number of extra bits for length and position\n");
     errno_t r = locate_test_folder();
     if (r == 0) {
         uint8_t data[4 * 1024] = {0};
@@ -196,9 +202,9 @@ int main(int argc, const char* argv[]) {
     if (r == 0 && file_exist(argv[0])) {
         r = test_compression(argv[0]);
     }
-    static const char* test_files[] = {
-        "test/bible.txt",     // bits len:3.01 pos:10.73 #words:91320 #lens:112
-        "test/hhgttg.txt",    // bits len:2.33 pos:10.78 #words:12034 #lens:40
+    static const char* files[] = {
+        "test/bible.txt",
+        "test/hhgttg.txt",
         "test/confucius.txt",
         "test/laozi.txt",
         "test/sqlite3.c",
@@ -207,9 +213,9 @@ int main(int argc, const char* argv[]) {
         "test/mandrill.bmp",
         "test/mandrill.png",
     };
-    for (int i = 0; i < countof(test_files) && r == 0; i++) {
-        if (file_exist(test_files[i])) {
-            r = test_compression(test_files[i]);
+    for (int i = 0; i < sizeof(files)/sizeof(files[0]) && r == 0; i++) {
+        if (file_exist(files[i])) {
+            r = test_compression(files[i]);
         }
     }
     return r;

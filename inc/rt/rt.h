@@ -30,6 +30,7 @@
 #pragma warning(disable: 4820) // '...' bytes padding added after data member '...'
 #pragma warning(disable: 4996) // The POSIX name for this item is deprecated.
 #pragma warning(disable: 5045) // Compiler will insert Spectre mitigation
+#pragma warning(disable: 4820) // bytes padding added after data member
 #endif
 
 #if defined(_DEBUG) && !defined(DEBUG)
