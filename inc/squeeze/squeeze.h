@@ -40,8 +40,7 @@ struct bitstream {
     void*    stream; // stream and (data,capacity) are exclusive
     uint8_t* data;
     uint64_t capacity; // data[capacity]
-    uint64_t bytes; // number of bytes written
-    uint64_t read;  // number of bytes read
+    uint64_t bytes; // number of bytes written or read
     uint64_t b64;   // bit shifting buffer
     int32_t  bits;  // bit count inside b64
     errno_t  error; // sticky error

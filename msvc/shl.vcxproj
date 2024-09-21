@@ -43,49 +43,27 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\inc\rt\file.h" />
-    <ClInclude Include="..\inc\rt\rt.h" />
-    <ClInclude Include="..\inc\rt\rt_generics.h" />
-    <ClInclude Include="..\inc\squeeze\squeeze.h" />
     <ClInclude Include="..\shl\squeeze\squeeze.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="../test.c" />
-    <ClCompile Include="..\src\squeeze.c" />
-    <ClCompile Include="..\test\sqlite3.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='release|ARM64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='release|ARM64EC'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='release|ARM'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='debug|ARM64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='debug|ARM64EC'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='debug|ARM'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='release|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='release|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">true</ExcludedFromBuild>
-    </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
     <None Include="..\shl\README.md" />
-    <None Include="..\test\arm64.elf" />
-    <None Include="..\test\x64.elf" />
   </ItemGroup>
   <ItemGroup>
-    <Text Include="..\test\bible.txt" />
-    <Text Include="..\test\confucius.txt" />
-    <Text Include="..\test\hhgttg.txt" />
-    <Text Include="..\test\laozi.txt" />
+    <ProjectReference Include="test.vcxproj">
+      <Project>{b71b5ca9-e0dd-4851-a041-baaf0e386327}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="..\test\mandrill.png" />
+    <ClCompile Include="..\shl.c" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{B71B5CA9-E0DD-4851-A041-BAAF0E386327}</ProjectGuid>
-    <RootNamespace>squeeze</RootNamespace>
+    <ProjectGuid>{B71B5CA9-E0DD-4851-A041-ABBF0E386327}</ProjectGuid>
+    <RootNamespace>shl</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <ProjectName>test</ProjectName>
+    <ProjectName>shl</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug|x64'" Label="Configuration">

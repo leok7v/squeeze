@@ -14,7 +14,7 @@ enum { window_bits = 15 }; // 32KB
 #elif defined(DEBUG) || defined(_DEBUG)
 enum { window_bits = 10 }; // 1KB
 #else
-enum { window_bits = 12 }; // 4KB
+enum { window_bits = 11 }; // 2KB
 #endif
 
 // window_bits = 15:
@@ -22,7 +22,7 @@ enum { window_bits = 12 }; // 4KB
 // zip: (MS Windows)
 // 4436173 -> 1398871 31.5% of "bible.txt"
 
-// Testing is limited to "size_t" and "int" precision
+// Test is limited to "size_t" and "int" precision
 
 static inline errno_t write_file(struct bitstream* bs) {
     size_t written = fwrite(&bs->b64, 8, 1, (FILE*)bs->stream);
@@ -178,7 +178,7 @@ static errno_t locate_test_folder(void) {
 int main(int argc, const char* argv[]) {
     (void)argc; (void)argv; // unused
     printf("Compression Window: %d bytes\n", 1u << window_bits);
-    printf("H.* is Shannon Entropy expressed by bits per symbol\n");
+    printf("H.* is Shannon Entropy expressed in bits per symbol\n");
     printf("X.* is average number of extra bits for length and position\n");
     errno_t r = locate_test_folder();
     if (r == 0) {

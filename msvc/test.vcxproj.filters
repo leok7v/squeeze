@@ -27,28 +27,14 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="../README.md" />
     <None Include="..\test\x64.elf">
       <Filter>test</Filter>
     </None>
     <None Include="..\test\arm64.elf">
       <Filter>test</Filter>
     </None>
-    <None Include="..\.gitignore" />
-    <None Include="../scripts/download.bat">
-      <Filter>scripts</Filter>
-    </None>
-    <None Include="..\scripts\amalgamate.bat">
-      <Filter>scripts</Filter>
-    </None>
-    <None Include="..\scripts\clean.bat">
-      <Filter>scripts</Filter>
-    </None>
     <None Include="..\shl\README.md">
       <Filter>shl</Filter>
-    </None>
-    <None Include="..\scripts\amalgamate.sh">
-      <Filter>scripts</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
@@ -66,9 +52,6 @@
     </Filter>
     <Filter Include="shl">
       <UniqueIdentifier>{005c6817-dd19-4728-aeb2-fcbc1dfcf5fe}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="scripts">
-      <UniqueIdentifier>{0502a8fc-5d23-40ec-a365-2f469521d619}</UniqueIdentifier>
     </Filter>
     <Filter Include="inc\rt">
       <UniqueIdentifier>{3eb40438-b604-4f88-b7fe-8df07513df9c}</UniqueIdentifier>

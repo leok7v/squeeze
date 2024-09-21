@@ -5,12 +5,13 @@ if exist ..\shl (
         mkdir ..\shl\squeeze
     )
     (
-        findstr /v /c:"#endif // squeeze_h" ..\inc\squeeze\squeeze.h
+        type ..\inc\squeeze\squeeze.h
+        ::: LF
+        echo.
         echo #ifdef squeeze_implementation
         type ..\src\squeeze.c
         echo.
         echo #endif // squeeze_implementation
         echo.
-        echo #endif // squeeze_h
     ) > ..\shl\squeeze\squeeze.h
 )
