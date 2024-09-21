@@ -44,7 +44,6 @@ static inline void bitstream_write_bit(struct bitstream* bs, int bit) {
                 } else {
                     memcpy(bs->data + bs->bytes, &bs->b64, 8);
                 }
-//              printf("bs->b64: 0x%016llx [%lld]\n", bs->b64, bs->bytes);
             } else {
                 bs->error = bs->write64(bs);
             }
@@ -75,7 +74,6 @@ static inline int bitstream_read_bit(struct bitstream* bs) {
                 } else {
                     memcpy(&bs->b64, bs->data + bs->bytes, 8);
                 }
-//              printf("%p bs->b64: 0x%016llx [%lld:%lld]\n", bs->data, bs->b64, bs->read, bs->bytes);
             } else {
                 bs->error = bs->read64(bs);
             }
