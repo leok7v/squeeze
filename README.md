@@ -166,3 +166,13 @@ Because Chinese texts are very compact comparing to e.g. the KJV bible
 the Guttenberg License wording is stripped from the text files.
 
 * See downloads.bat
+
+### Further development
+
+* Analise histograms of the back references (lengths and positions)
+  to see if it is possible to come up with better encoding.
+  See ""Bible-Study.md" in this repo.
+* Replace Huffman with Ranger Coder: 
+  https://chatgpt.com/share/66f1c9d3-43dc-8003-abbe-70d669e84a46
+* Restore map dictionary to address large distance back references
+  up to 2^15 even for smaller window.

@@ -19,8 +19,8 @@ static errno_t lorem_ipsum(void) {
         squeeze_write_header(&write, input_size);
         static struct squeeze compress;
         squeeze_init(&compress);
-        squeeze_compress(&compress, &write, (const uint8_t*)text,
-                         input_size, 1u << 11); // 2KB window_bits: 11
+        squeeze_compress(&compress, &write, text,
+                         input_size, 1u << 11); // window_bits: 11 (2KB)
         if (compress.error != 0) {
             printf("Compression error: %d\n", compress.error);
             return compress.error;
@@ -41,13 +41,13 @@ static errno_t lorem_ipsum(void) {
             printf("Decompressed size does not match original size\n");
             return EINVAL;
         }
-        squeeze_decompress(&decompress, &read, (uint8_t*)decompressed_data,
-                                                (size_t)decompressed);
+        squeeze_decompress(&decompress, &read, decompressed_data,
+                                       (size_t)decompressed);
         if (decompress.error != 0) {
             printf("Decompression error: %d\n", decompress.error);
             return decompress.error;
         }
-        if (memcmp(decompressed_data, text, decompressed) != 0) {
+        if (memcmp(decompressed_data, text, (size_t)decompressed) != 0) {
             printf("Decompressed data does not match original data\n");
             return EINVAL;
         }

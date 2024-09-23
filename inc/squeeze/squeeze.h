@@ -57,12 +57,23 @@ struct squeeze {
     errno_t error; // sticky
     uint8_t len_index[squeeze_deflate_sym_max  + 1]; // squeeze_len_base index
     uint8_t pos_index[squeeze_deflate_distance + 1]; // squeeze_pos_base index
-    struct { // extra bits stats:
-        double len_sum;
-        double pos_sum;
-        size_t len_count;
-        size_t pos_count;
-    } extra;
+    struct { // stats:
+        size_t lit_count; // count of encoded literals
+        size_t ref_count; // count of encoded back references (len, pos)
+        double lit_sum;   // sum of literal Huffman bits
+        double len_sum;   // sum of len Huffman bits
+        double pos_sum;   // sum of pos Huffman bits
+        struct { // extra bits:
+            double len_sum; // number of len extra bits
+            double pos_sum; // number of pos extra bits
+        } extra;
+        double dis_histogram[1u << 15]; // distance historam
+        double pos_histogram[30];       // Huffman code for distance
+        double len_histogram[1u << 15];
+        int32_t nyt_lit;
+        int32_t nyt_len;
+        int32_t nyt_pos;
+    } stats;
 };
 
 #if defined(__cplusplus)
@@ -72,10 +83,10 @@ extern "C" {
 void squeeze_init(struct squeeze* s);
 void squeeze_write_header(struct bitstream* bs, uint64_t bytes);
 void squeeze_compress(struct squeeze* s, struct bitstream* bs,
-                      const uint8_t* data, size_t bytes, uint16_t window);
+                      const void* data, size_t bytes, uint16_t window);
 void squeeze_read_header(struct bitstream* bs, uint64_t *bytes);
 void squeeze_decompress(struct squeeze* s, struct bitstream* bs,
-                        uint8_t* data, size_t bytes);
+                        void* data, size_t bytes);
 double squeeze_shannon_entropy(const struct huffman* t);
 
 #if defined(__cplusplus)

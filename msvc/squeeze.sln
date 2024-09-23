@@ -10,6 +10,7 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "misc", "misc", "{EFA04850-7117-4D03-B2D3-55081272948A}"
 	ProjectSection(SolutionItems) = preProject
 		..\.gitignore = ..\.gitignore
+		..\BibleKJV.md = ..\BibleKJV.md
 		..\README.md = ..\README.md
 	EndProjectSection
 EndProject
