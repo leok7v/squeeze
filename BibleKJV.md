@@ -99,8 +99,10 @@ Full distance position frequency distribution is about this shape:
                                                                 0.0
      200                       512                         1023
 ```
-see: 
 
-and
+detailed: 
+![Backreference_Distance_Bible_KJV_Window_1024](https://github.com/user-attachments/assets/fc23a7a5-1f71-44c2-9f8e-833eb3f61f0a)
 
-commit:
+and stats and histograms code at this commit:
+[https://github.com/leok7v/squeeze/tree/570ed33b10a1c5d554643ea67343822349e79f74]
+
