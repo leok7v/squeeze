@@ -6,30 +6,38 @@ Compression Window: ```2^10 1024 bytes```
 
 ```4,436,173 -> 1,877,568 bytes 42.3% of "bible.txt"```
 
-```nyt lit:80 len:28 pos:19 (count of NYT "Not Yet Transmitted" encoding points)```
+```nyt lit:80 len:28 pos:19``` 
+
+(count of NYT "Not Yet Transmitted" encoding points)
+
 Confirms that count of NYT encoding points is less or equal to the 
 corresponding Huffman tree terminal nodes. 
 
-```**bps:** 3.4 **H.lit:** 5.1 **H.pos: 3.5** **Bits** len: 4.3+0.1 pos: 0.7+6.4```
+```bps: 3.4 H.lit: 5.1 H.pos: 3.5 Bits len: 4.3+0.1 pos: 0.7+6.4```
 
 Average bits per symbol in the source tree is ```3.4```.
 
 H.* is Shannon Entropy expressed in bits per symbol for
+
 ```lit``` huffman table that encodes literal bytes and first 30 base length indices.
+
 ```pos``` huffman table that encodes back reference positions indices.
 
-**```Bits```** is average of Huffman bits + Extra bits
+```Bits``` is average of Huffman bits + Extra bits
 
 ```lit: 19.5% of total 4,436,173 input bytes```
+
 about 20% input bytes are passed thru to compressed stream
 the rest it encoded as minimum length 3 backreferences.
 
 ```lit: 56.3% ref: 43.7% of total 1,539,161 encoding points```
+
 The output compressed stream is composed of 56% of literal bytes
 to 43% back references.
 
 
 The length Huffman encoding table final composition:
+
 ```
 len[ 3]: 37.5%  37.5% bits: 3
 len[ 4]: 18.6%  56.0% bits: 4
@@ -54,6 +62,7 @@ len[22]:  0.1%  99.3% bits: 8
 ```
 
 The position Huffman encoding table final composition:
+
 ```
 pos[ 1]:  0.0%   0.0% bits: 6
 pos[ 2]:  0.1%   0.1% bits: 4
@@ -77,6 +86,7 @@ pos[19]: 14.2% 100.0% bits: 3
 ```
 
 Full distance position frequency distribution is about this shape:
+
 ```
  #                                                              1.0
 ## #                                                           
