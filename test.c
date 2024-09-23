@@ -24,6 +24,20 @@ enum { window_bits = 11 }; // 2KB
 
 // Test is limited to "size_t" and "int" precision
 
+static double entropy(const struct huffman* t) { // Shannon entropy
+    double total = 0;
+    for (int32_t i = 0; i < t->n; i++) { total += (double)t->node[i].freq; }
+    double e = 0.0;
+    for (int32_t i = 0; i < t->n; i++) {
+        if (t->node[i].freq > 0) {
+            double p_i = (double)t->node[i].freq / total;
+            e -= p_i * log2(p_i);
+        }
+    }
+    return e;
+}
+
+
 static inline errno_t write_file(struct bitstream* bs) {
     size_t written = fwrite(&bs->b64, 8, 1, (FILE*)bs->stream);
     return written == 1 ? 0 : errno;
@@ -61,64 +75,16 @@ static errno_t compress(const char* from, const char* to,
         if (fn == null) { fn = from == null ? null : strrchr(from, '/'); }
         if (fn != null) { fn++; } else { fn = (char*)from; }
         const uint64_t written = bs.bytes;
-        double percent = written * 100.0 / bytes;
-        double bps = written * 8.0 / bytes; // bits per symbol
+        double pc = written * 100.0 / bytes; // percent
+        double bps = written * 8.0 / bytes;  // bits per symbol
         printf("bps: %.1f ", bps);
-        printf("H.lit: %.1f H.pos: %.1f ",
-                squeeze_shannon_entropy(&s.lit),
-                squeeze_shannon_entropy(&s.pos));
-        const size_t brc = s.stats.ref_count; // back reference count
-        printf("Bits len: %.1f+%.1f pos: %.1f+%.1f ",
-            brc > 0 ? s.stats.len_sum        / brc : 0,
-            brc > 0 ? s.stats.extra.len_sum  / brc : 0,
-            brc > 0 ? s.stats.pos_sum        / brc : 0,
-            brc > 0 ? s.stats.extra.pos_sum  / brc : 0);
+        printf("H.lit: %.1f H.pos: %.1f ", entropy(&s.lit), entropy(&s.pos));
         if (from != null) {
             printf("%7lld -> %7lld %5.1f%% of \"%s\"\n",
-                  (uint64_t)bytes, written, percent, fn);
+                  (uint64_t)bytes, written, pc, fn);
         } else {
-            printf("%7lld -> %7lld %5.1f%%\n",
-                  (uint64_t)bytes, written, percent);
+            printf("%7lld -> %7lld %5.1f%%\n", (uint64_t)bytes, written, pc);
         }
-        // stats
-        printf("nyt lit:%d len:%d pos:%d\n", s.stats.nyt_lit, s.stats.nyt_len, s.stats.nyt_pos);
-        // NYT counters dump just to confirm that they are not larger than
-        // corresponding Huffman tree sizes
-        uint64_t count = s.stats.lit_count + s.stats.ref_count;
-        printf("lit: %4.1f%% ref: %4.1f%% of total %lld encoding points\n",
-            100.0 * s.stats.lit_count / count,
-            100.0 * s.stats.ref_count / count, count);
-        printf("lit: %4.1f%% of total %lld input bytes\n",
-            100.0 * s.stats.lit_count / bytes, (uint64_t)bytes);
-        double cumulative = 0;
-        for (int i = 0; i < sizeof(s.stats.len_histogram)/sizeof(s.stats.len_histogram[0]); i++) {
-            double p = 100.0 * s.stats.len_histogram[i] / brc; // percent
-            if (i == 0) { cumulative = p; }{ cumulative += p; }
-            if (p >= 0.1) {
-                const uint16_t c = s.len_index[i] + 257;
-                printf("len[%5d]: %4.1f%% %5.1f%% bits: %d\n", i, p, cumulative, s.lit.node[c].bits);
-            }
-        }
-        printf("\n");
-        cumulative = 0;
-        for (int i = 0; i < sizeof(s.stats.pos_histogram)/sizeof(s.stats.pos_histogram[0]); i++) {
-            double p = 100.0 * s.stats.pos_histogram[i] / brc; // percent
-            if (i == 0) { cumulative = p; }{ cumulative += p; }
-            if (p > 0) {
-                printf("pos[%5d]: %4.1f%% %5.1f%% bits: %d\n", i, p, cumulative, s.pos.node[i].bits);
-            }
-        }
-        printf("\n");
-        #if 1
-        // Rather large 2^window_bits distances histogram:
-        for (int i = 0; i < sizeof(s.stats.dis_histogram)/sizeof(s.stats.dis_histogram[0]); i++) {
-            double f = s.stats.dis_histogram[i];
-            if (f > 0) {
-                printf("%5d,%.0f\n", i, f);
-            }
-        }
-        printf("\n");
-        #endif
     }
     return r;
 }
@@ -220,10 +186,7 @@ int main(int argc, const char* argv[]) {
     (void)argc; (void)argv; // unused
     printf("Compression Window: 2^%d %d bytes size_t: %d int: %d\n",
             window_bits, 1u << window_bits, sizeof(size_t), sizeof(int));
-    printf("H.* is Shannon Entropy expressed in bits per symbol\n");
-    printf("Bits is average of Huffman+Extra bits for back reference\n");
     errno_t r = locate_test_folder();
-#if 0
     if (r == 0) {
         uint8_t data[4 * 1024] = {0};
         r = test(null, data, sizeof(data));
@@ -245,17 +208,16 @@ int main(int argc, const char* argv[]) {
     if (r == 0 && file_exist(argv[0])) {
         r = test_compression(argv[0]);
     }
-#endif
     static const char* files[] = {
         "test/bible.txt",
-//      "test/hhgttg.txt",
-//      "test/confucius.txt",
-//      "test/laozi.txt",
-//      "test/sqlite3.c",
-//      "test/arm64.elf",
-//      "test/x64.elf",
-//      "test/mandrill.bmp",
-//      "test/mandrill.png",
+        "test/hhgttg.txt",
+        "test/confucius.txt",
+        "test/laozi.txt",
+        "test/sqlite3.c",
+        "test/arm64.elf",
+        "test/x64.elf",
+        "test/mandrill.bmp",
+        "test/mandrill.png",
     };
     for (int i = 0; i < sizeof(files)/sizeof(files[0]) && r == 0; i++) {
         if (file_exist(files[i])) {

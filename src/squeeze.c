@@ -370,22 +370,8 @@ static void squeeze_deflate_init(struct squeeze* s) {
 
 void squeeze_init(struct squeeze* s) {
     s->error = 0;
-    memset(&s->stats, 0, sizeof(s->stats));
     huffman_init(&s->lit, s->lit_nodes, countof(s->lit_nodes));
     huffman_init(&s->pos, s->pos_nodes, countof(s->pos_nodes));
-}
-
-double squeeze_shannon_entropy(const struct huffman* t) {
-    double total = 0;
-    double entropy = 0.0;
-    for (int32_t i = 0; i < t->n; i++) { total += (double)t->node[i].freq; }
-    for (int32_t i = 0; i < t->n; i++) {
-        if (t->node[i].freq > 0) {
-            double p_i = (double)t->node[i].freq / total;
-            entropy += p_i * log2(p_i);
-        }
-    }
-    return -entropy;
 }
 
 static inline void squeeze_write_bit(struct squeeze* s, bool bit) {
@@ -441,41 +427,23 @@ static inline void squeeze_encode_len(struct squeeze* s, uint16_t len) {
     const uint16_t b = squeeze_len_base[i];
     const uint8_t  x = squeeze_len_xb[i];
     const uint16_t c = squeeze_deflate_sym_min + i; // length code
-    // stats:
-    s->stats.len_histogram[len]++;
-    s->stats.ref_count++;
-    if (s->lit.node[c].bits == 0) {
-        s->stats.nyt_len++;
-        s->stats.len_sum += s->lit.node[squeeze_lit_nyt].bits + 9;
-    } else {
-        s->stats.len_sum += s->lit.node[c].bits;
-    }
     squeeze_encode_literal(s, c);
-    if (x > 0) {
-        squeeze_write_bits(s, (len - b), x);
-        s->stats.extra.len_sum += x;
-    }
+    if (x > 0) { squeeze_write_bits(s, (len - b), x); }
 }
 
 static inline void squeeze_encode_pos(struct squeeze* s, uint16_t pos) {
     const uint8_t  i = s->pos_index[pos];
-    s->stats.dis_histogram[pos]++;
-    s->stats.pos_histogram[i]++;
     const uint16_t b = squeeze_pos_base[i];
     const uint8_t  x = squeeze_pos_xb[i];
     if (s->pos.node[i].bits == 0) {
-        s->stats.nyt_pos++;
-        s->stats.pos_sum += s->lit.node[squeeze_pos_nyt].bits + 5;
         squeeze_write_huffman(s, &s->pos, squeeze_pos_nyt);
         squeeze_write_bits(s, i, 5); // 0..29
         if (!huffman_insert(&s->pos, i)) { s->error = E2BIG; }
     } else {
-        s->stats.pos_sum += s->lit.node[i].bits;
         squeeze_write_huffman(s, &s->pos, i);
     }
     if (x > 0) {
         squeeze_write_bits(s, (pos - b), x);
-        s->stats.extra.pos_sum += x;
     }
 }
 
@@ -517,13 +485,6 @@ void squeeze_compress(struct squeeze* s, struct bitstream* bs,
             i += len;
         } else {
             uint16_t b = data[i];
-            s->stats.lit_count++;
-            if (s->lit.node[b].bits == 0) {
-                s->stats.nyt_lit++;
-                s->stats.lit_sum += s->lit.node[squeeze_lit_nyt].bits + 9;
-            } else {
-                s->stats.lit_sum += s->lit.node[b].bits;
-            }
             squeeze_encode_literal(s, b);
             i++;
         }
