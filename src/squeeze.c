@@ -465,12 +465,12 @@ static inline void squeeze_encode_pos(struct squeeze* s, uint16_t pos) {
     const uint8_t  x = squeeze_pos_xb[i];
     if (s->pos.node[i].bits == 0) {
         s->stats.nyt_pos++;
-        s->stats.pos_sum += s->lit.node[squeeze_pos_nyt].bits + 5;
+        s->stats.pos_sum += s->pos.node[squeeze_pos_nyt].bits + 5;
         squeeze_write_huffman(s, &s->pos, squeeze_pos_nyt);
         squeeze_write_bits(s, i, 5); // 0..29
         if (!huffman_insert(&s->pos, i)) { s->error = E2BIG; }
     } else {
-        s->stats.pos_sum += s->lit.node[i].bits;
+        s->stats.pos_sum += s->pos.node[i].bits;
         squeeze_write_huffman(s, &s->pos, i);
     }
     if (x > 0) {

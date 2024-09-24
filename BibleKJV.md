@@ -10,7 +10,7 @@ Compression Window: ```2^10 1024 bytes```
 Confirms that count of NYT encoding points is less or equal to the 
 corresponding Huffman tree terminal nodes. 
 
-```**bps:** 3.4 **H.lit:** 5.1 **H.pos: 3.5** **Bits** len: 4.3+0.1 pos: 0.7+6.4```
+```**bps:** 3.4 **H.lit:** 5.1 **H.pos: 3.5** **Bits** len: 4.3+0.1 pos: 3.8+6.4```
 
 Average bits per symbol in the source tree is ```3.4```.
 

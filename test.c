@@ -109,7 +109,7 @@ static errno_t compress(const char* from, const char* to,
             }
         }
         printf("\n");
-        #if 1
+        #if 0
         // Rather large 2^window_bits distances histogram:
         for (int i = 0; i < sizeof(s.stats.dis_histogram)/sizeof(s.stats.dis_histogram[0]); i++) {
             double f = s.stats.dis_histogram[i];
