@@ -13,7 +13,7 @@ Compression Window: ```2^10 1024 bytes```
 Confirms that count of NYT encoding points is less or equal to the 
 corresponding Huffman tree terminal nodes. 
 
-```bps: 3.4 H.lit: 5.1 H.pos: 3.5 Bits len: 4.3+0.1 pos: 0.7+6.4```
+```bps: 3.4 H.lit: 5.1 H.pos: 3.5 Bits len: 4.3+0.1 pos: 3.8+6.4```
 
 Average bits per symbol in the source tree is ```3.4```.
 
@@ -113,6 +113,6 @@ Full distance position frequency distribution is about this shape:
 detailed: 
 ![Backreference_Distance_Bible_KJV_Window_1024](https://github.com/user-attachments/assets/fc23a7a5-1f71-44c2-9f8e-833eb3f61f0a)
 
-and stats and histograms code at this commit:
-[https://github.com/leok7v/squeeze/tree/570ed33b10a1c5d554643ea67343822349e79f74]
+and stats and histograms code at the branch:
+[https://github.com/leok7v/squeeze/tree/branch_bible_study]
 
